@@ -1,92 +1,100 @@
+import CryptoKit
 import Foundation
 import Testing
 @testable import MixCore
 
-/// Handshake beider Macs mit den Schlüsseln aus `codeA` / `codeB`; liefert die Stände nach dem ersten Austausch
-private func handshake(codeA: String, codeB: String) throws -> (a: PairHandshake, b: PairHandshake, pa: PairFrame?, pb: PairFrame?) {
-    let ka = PairCrypto.deriveKey(code: codeA, idA: "Alpha", idB: "Beta")
-    let kb = PairCrypto.deriveKey(code: codeB, idA: "Alpha", idB: "Beta")
-    var a = PairHandshake(ownID: "Alpha"), b = PairHandshake(ownID: "Beta")
-    let ha = a.hello, hb = b.hello
-    let pa = try a.receive(hb) { _ in ka }
-    let pb = try b.receive(ha) { _ in kb }
-    return (a, b, pa, pb)
+/// Kopplung zweier Macs: Festlegung (Commit) beider Seiten, dann Aufdeckung; liefert die Ergebnisse beider Seiten
+private func rendezvous(_ a: PairRendezvous, _ b: PairRendezvous) throws -> (a: PairSAS, b: PairSAS) {
+    (try a.finish(peerCommit: b.commitment, reveal: b.reveal), try b.finish(peerCommit: a.commitment, reveal: a.reveal))
 }
 
-@Test func pairHandshakeSameCodeAgreesOnSessionKey() throws {
-    var (a, b, pa, pb) = try handshake(codeA: "123456", codeB: "123456")
-    let ka = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
-    #expect(try a.receive(try #require(pb)) { _ in ka } == nil)
-    #expect(try b.receive(try #require(pa)) { _ in ka } == nil)
-    let sa = try #require(a.session), sb = try #require(b.session)
-    #expect(PairCrypto.bytes(sa) == PairCrypto.bytes(sb))
-    #expect(PairCrypto.bytes(sa) != PairCrypto.bytes(ka))
-    #expect(a.channel() != nil && b.channel() != nil)
+private func bytes(_ s: PairSAS) -> Data { PairCrypto.bytes(s.key) }
+
+@Test func pairingBothSidesDeriveSameKeyAndCode() throws {
+    let a = PairRendezvous(id: "id-alpha", name: "Alpha")
+    let b = PairRendezvous(id: "id-beta", name: "Beta")
+    let (sa, sb) = try rendezvous(a, b)
+    #expect(sa.code == sb.code)
+    #expect(sa.code.count == 6 && sa.code.allSatisfy(\.isNumber))
+    #expect(bytes(sa) == bytes(sb))
+    #expect(bytes(sa).count == 32)
+    // Bestätigung: jede Seite prüft die des anderen mit dessen Id
+    #expect(sa.verify(sb.confirmation(from: "id-beta"), from: "id-beta"))
+    #expect(sb.verify(sa.confirmation(from: "id-alpha"), from: "id-alpha"))
+    #expect(!sa.verify(sb.confirmation(from: "id-beta"), from: "id-alpha"))
 }
 
-@Test func pairHandshakeWrongCodeFails() throws {
-    var (a, b, pa, pb) = try handshake(codeA: "123456", codeB: "654321")
-    let ka = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
-    let kb = PairCrypto.deriveKey(code: "654321", idA: "Alpha", idB: "Beta")
-    #expect(throws: PairAuthError.rejected) { try a.receive(try #require(pb)) { _ in ka } }
-    #expect(throws: PairAuthError.rejected) { try b.receive(try #require(pa)) { _ in kb } }
-    #expect(a.session == nil && b.session == nil)
+@Test func pairingMismatchedRevealIsRejected() throws {
+    let a = PairRendezvous(id: "id-alpha", name: "Alpha")
+    let b = PairRendezvous(id: "id-beta", name: "Beta")
+    let mallory = PairRendezvous(id: "id-beta", name: "Beta")   // anderer Schlüssel, gleiche Id
+    // Der Partner hat sich auf b.commitment festgelegt, deckt aber mallory auf
+    #expect(throws: PairAuthError.commitmentMismatch) { try a.finish(peerCommit: b.commitment, reveal: mallory.reveal) }
+    // Eine Aufdeckung mit geändertem Namen passt ebenfalls nicht zur Festlegung
+    let renamed = PairFrame.pairReveal(id: "id-beta", name: "Gamma", pub: b.publicKey, nonce: Data(repeating: 1, count: 32))
+    #expect(throws: PairAuthError.commitmentMismatch) { try a.finish(peerCommit: b.commitment, reveal: renamed) }
+    // eigene Id als Partner: abgelehnt
+    #expect(throws: PairAuthError.rejected) { try a.finish(peerCommit: a.commitment, reveal: a.reveal) }
 }
 
-@Test func pairHandshakeRejectsReplayAndUnknownPeer() throws {
-    var (a, b, _, pb) = try handshake(codeA: "123456", codeB: "123456")
-    let ka = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
-    _ = try a.receive(try #require(pb)) { _ in ka }
-    #expect(throws: PairAuthError.rejected) { try a.receive(try #require(pb)) { _ in ka } }
-    #expect(throws: PairAuthError.rejected) { try b.receive(.hello(id: "Beta", nonce: Data(count: 32))) { _ in ka } }
-    var c = PairHandshake(ownID: "Gamma")
-    #expect(throws: PairAuthError.unpaired) { try c.receive(b.hello) { _ in nil } }
-    #expect(throws: PairAuthError.rejected) { try c.receive(.hello(id: "Delta", nonce: Data(count: 8))) { _ in ka } }
+@Test func pairingDifferentEphemeralKeysGiveDifferentCodes() throws {
+    let a = PairRendezvous(id: "id-alpha", name: "Alpha")
+    let b = PairRendezvous(id: "id-beta", name: "Beta")
+    let c = PairRendezvous(id: "id-beta", name: "Beta")
+    let (ab, _) = try rendezvous(a, b)
+    let (ac, _) = try rendezvous(a, c)
+    #expect(ab.code != ac.code || bytes(ab) != bytes(ac))
+    #expect(bytes(ab) != bytes(ac))
+    // gleiche Schlüssel, andere Nonce: anderer Transkript-Hash, andere Zahl und anderer Schlüssel
+    let a2 = PairRendezvous(id: "id-alpha", name: "Alpha")
+    let (ab2, _) = try rendezvous(a2, b)
+    #expect(bytes(ab2) != bytes(ab))
 }
 
-@Test func pairKeyIndependentOfIdOrder() {
-    let ab = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
-    let ba = PairCrypto.deriveKey(code: "123456", idA: "Beta", idB: "Alpha")
-    #expect(PairCrypto.bytes(ab) == PairCrypto.bytes(ba))
-    #expect(PairCrypto.bytes(ab) != PairCrypto.bytes(PairCrypto.deriveKey(code: "123457", idA: "Alpha", idB: "Beta")))
+@Test func pairingCodeIsSixDigitsOverManyRuns() throws {
+    var seen = Set<String>()
+    for _ in 0..<40 {
+        let (sa, _) = try rendezvous(PairRendezvous(id: "id-alpha", name: "Alpha"), PairRendezvous(id: "id-beta", name: "Beta"))
+        #expect(sa.code.count == 6)
+        seen.insert(sa.code)
+    }
+    #expect(seen.count > 1)
 }
 
-@Test func pairChannelRoundTripBothDirections() throws {
-    let key = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
-    var lower = PairChannel(key: key, lower: true)
-    var upper = PairChannel(key: key, lower: false)
-    let f1 = try lower.seal(Data("one".utf8))
-    #expect(try upper.open(f1) == Data("one".utf8))
-    let f2 = try upper.seal(Data("two".utf8))
-    #expect(try lower.open(f2) == Data("two".utf8))
+@Test func handshakeWithStoredKeyAuthenticatesBothWays() throws {
+    let key = try rendezvous(PairRendezvous(id: "id-alpha", name: "Alpha"), PairRendezvous(id: "id-beta", name: "Beta")).a.key
+    var a = PairHandshake(ownID: "id-alpha", ownName: "Alpha"), b = PairHandshake(ownID: "id-beta", ownName: "Beta")
+    let pa = try b.receive(a.hello, key: { $0 == "id-alpha" ? key : nil })
+    let pb = try a.receive(b.hello, key: { $0 == "id-beta" ? key : nil })
+    #expect(try a.receive(pa!, key: { _ in key }) == nil)
+    #expect(try b.receive(pb!, key: { _ in key }) == nil)
+    #expect(a.session != nil && a.session == b.session)
+    #expect(a.peerID == "id-beta" && b.peerID == "id-alpha")
 }
 
-@Test func pairChannelRejectsReplay() throws {
-    let key = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
+@Test func handshakeRefusesUnpairedPeer() throws {
+    var a = PairHandshake(ownID: "id-alpha", ownName: "Alpha")
+    let c = PairHandshake(ownID: "id-gamma", ownName: "Gamma")
+    #expect(throws: PairAuthError.unpaired) { try a.receive(c.hello, key: { _ in nil }) }
+    #expect(a.channel() == nil)
+}
+
+@Test func pairFrameRoundTripsForPairingSteps() throws {
+    let r = PairRendezvous(id: "id-alpha", name: "Alpha")
+    for f in [PairFrame.pairCommit(r.commitment), r.reveal, .pairConfirm(Data([1, 2])), .pairReject] {
+        let line = f.line().dropLast()
+        #expect(try JSONDecoder().decode(PairFrame.self, from: line) == f)
+    }
+}
+
+@Test func pairChannelSealsAndOpens() throws {
+    let key = try rendezvous(PairRendezvous(id: "id-alpha", name: "Alpha"), PairRendezvous(id: "id-beta", name: "Beta")).a.key
     var sender = PairChannel(key: key, lower: true)
     var receiver = PairChannel(key: key, lower: false)
-    let f1 = try sender.seal(Data("play".utf8))
-    let f2 = try sender.seal(Data("pause".utf8))
-    #expect(try receiver.open(f2) == Data("pause".utf8))
-    #expect(throws: PairAuthError.rejected) { try receiver.open(f2) }
+    let f1 = try sender.seal(Data("mark".utf8))
+    #expect(try receiver.open(f1) == Data("mark".utf8))
+    // Wiederholung wird abgewiesen, ein Frame mit fremdem Schlüssel auch
     #expect(throws: PairAuthError.rejected) { try receiver.open(f1) }
-}
-
-@Test func pairChannelRejectsTampering() throws {
-    let key = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
-    var sender = PairChannel(key: key, lower: true)
-    var receiver = PairChannel(key: key, lower: false)
-    guard case let .sealed(seq, box) = try sender.seal(Data("mark".utf8)) else { throw PairAuthError.rejected }
-    #expect(box.count == 4 + 16)
-    var bent = box
-    bent[bent.startIndex] ^= 0x01
-    #expect(throws: PairAuthError.rejected) { try receiver.open(.sealed(seq: seq, box: bent)) }
-    #expect(throws: PairAuthError.rejected) { try receiver.open(.sealed(seq: seq + 5, box: box)) }
-    #expect(try receiver.open(.sealed(seq: seq, box: box)) == Data("mark".utf8))
-}
-
-@Test func pairChannelWithWrongKeyFails() throws {
-    var sender = PairChannel(key: PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta"), lower: true)
-    var receiver = PairChannel(key: PairCrypto.deriveKey(code: "654321", idA: "Alpha", idB: "Beta"), lower: false)
-    #expect(throws: PairAuthError.rejected) { try receiver.open(try sender.seal(Data("x".utf8))) }
+    var other = PairChannel(key: SymmetricKey(size: .bits256), lower: true)
+    #expect(throws: PairAuthError.rejected) { try receiver.open(try other.seal(Data("x".utf8))) }
 }

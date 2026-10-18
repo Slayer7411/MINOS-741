@@ -57,3 +57,34 @@ enum PairKeychain {
         try? JSONEncoder().encode(m).write(to: fileURL(root), options: .atomic)
     }
 }
+
+/// Kennung dieses Macs für Kopplung und Handshake: zufällig beim ersten Start, nur lokal (Application Support, nicht
+/// synchronisiert). Der Name (Bonjour, Anzeige) ist davon getrennt
+enum PairIdentity {
+    static let id: String = {
+        let file = DataDir.local.appendingPathComponent("pair-instance-id")
+        if let s = try? String(contentsOf: file, encoding: .utf8), !s.isEmpty { return s }
+        let s = UUID().uuidString
+        try? FileManager.default.createDirectory(at: DataDir.local, withIntermediateDirectories: true)
+        try? s.write(to: file, atomically: true, encoding: .utf8)
+        return s
+    }()
+}
+
+/// Der gekoppelte Partner dieses Macs (ein Partner): Kennung (Keychain-Konto) und Name für die Anzeige
+struct PairedPeer: Equatable {
+    let id: String
+    let name: String
+
+    static func load() -> PairedPeer? {
+        guard let id = E2E.defaults.string(forKey: "pair.peerID"), let name = E2E.defaults.string(forKey: "pair.peerName") else {
+            return nil
+        }
+        return PairedPeer(id: id, name: name)
+    }
+
+    static func save(_ p: PairedPeer?) {
+        E2E.defaults.set(p?.id, forKey: "pair.peerID")
+        E2E.defaults.set(p?.name, forKey: "pair.peerName")
+    }
+}

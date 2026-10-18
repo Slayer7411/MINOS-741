@@ -140,9 +140,17 @@ final class E2EControl {
             let r = PairDebugResponder.answer(command: "prefs-set", args: req.args, mix: mix, allowed: true)
             done(r.ok, parsedBody(r.body))
 
-        case "pair-code":
-            guard let code = a["code"] as? String, !code.isEmpty else { return done(false, "pair-code: Code fehlt") }
-            PairLink.shared.pair(code: code)
+        case "pair-start":
+            let ok = PairLink.shared.startPairing(with: a["name"] as? String)
+            done(ok, ["pairing": ok])
+
+        case "pair-confirm":
+            guard let code = PairLink.shared.pairing?.code else { return done(false, "pair-confirm: noch kein Code") }
+            PairLink.shared.confirmPairing()
+            done(true, ["code": code])
+
+        case "pair-unpair":
+            PairLink.shared.unpair()
             done(true, [:])
 
         case "ui-stats":
@@ -365,8 +373,11 @@ final class E2EControl {
                     "selection": p.selection.sorted(), "rows": p.shown.count]
         }
         let peer: Any = PairLink.shared.peer.map { ["name": $0.name, "writes": $0.writes, "decks": $0.decks] as [String: Any] } ?? NSNull()
+        let pairingInfo: Any = PairLink.shared.pairing.map { ["peer": $0.peer ?? "", "code": $0.code ?? ""] as [String: Any] } ?? NSNull()
         o["pair"] = ["on": PairLink.shared.setup.on, "writes": PairLink.shared.setup.writes, "decks": PairLink.shared.setup.decks,
-                     "connected": PairLink.shared.connected, "peer": peer, "service": PairLink.service]
+                     "connected": PairLink.shared.connected, "peer": peer, "service": PairLink.service,
+                     "paired": PairLink.shared.paired?.name ?? NSNull(), "pairing": pairingInfo,
+                     "seen": PairLink.shared.seen, "note": PairLink.shared.note] as [String: Any]
         // Ausgabe: 0 = kein Gerät (Ende-zu-Ende), sonst die Geräte-Kennung des Ausgangs
         o["output"] = ["e2e": E2E.isActive, "deviceID": Int(mix.engine.outputDeviceID), "running": mix.engine.running,
                        "rate": mix.engine.outputRate] as [String: Any]

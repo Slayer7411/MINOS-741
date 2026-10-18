@@ -2189,3 +2189,19 @@
 "Der Datenordner liegt neben der Collection; Einstellungen und Verlauf bleiben dort." = "The data folder sits next to the collection; settings and history stay there.";
 "Ohne Automatik meldet MINOS-741 nur ein Update in der Statusleiste." = "Without automation MINOS-741 only reports an update in the status bar.";
 "misst je puffergröße (64 bis 1024), dann die empfehlung. lädt 4 tracks, hauptausgang stumm." = "measures each buffer size (64 to 1024), then the recommendation. loads 4 tracks, main output muted.";
+
+/* Zwei-Mac-Modus: Kopplung (Vergleichszahl, Festlegung, Trennen) */
+"Gekoppelt mit %@" = "Paired with %@";
+"Trennen" = "Unpair";
+"Mit %@ koppeln" = "Pair with %@";
+"Sucht den zweiten Mac …" = "Looking for the second Mac …";
+"Kopplung mit %@" = "Pairing with %@";
+"Gleiche Zahl auf beiden Macs?" = "Same number on both Macs?";
+"Warte auf den anderen Mac …" = "Waiting for the other Mac …";
+"Bestätigen" = "Confirm";
+"Nicht gekoppelt: %@" = "Not paired: %@";
+"Pairing abgelehnt: %@" = "Pairing rejected: %@";
+"Kopplung abgebrochen" = "Pairing cancelled";
+"Kopplung aufgehoben" = "Pairing removed";
+"unbekannt" = "unknown";
+"noch kein Code" = "no code yet";

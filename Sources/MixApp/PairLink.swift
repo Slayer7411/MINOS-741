@@ -4,6 +4,7 @@ import Network
 import SystemConfiguration
 import MixCore
 import MixEngine
+import Observation
 
 /// Zwei Macs als eine Session: beide bieten sich per Bonjour an (`_minos741._tcp`, jede Verbindung: Ethernet,
 /// Thunderbolt-/USB-Bridge, WLAN) und suchen sich gegenseitig. Beide bauen ausgehend auf und nehmen eingehende an;
@@ -11,7 +12,7 @@ import MixEngine
 /// zweite, bleibt die des kleineren Namens (beide Macs entscheiden gleich). Jeder Mac spielt seine Decks (⌘, -> DECKS)
 /// über sein eigenes Interface, den Takt hält Link. Über die Verbindung laufen die Gespielt-Markierungen; in die
 /// Collection schreibt nur der schreibende Mac. Umschalten wirkt sofort
-@MainActor
+@MainActor @Observable
 final class PairLink {
     static let shared = PairLink()
     /// Bonjour-Art; Ende-zu-Ende: eigene Art (`MIX741_E2E_SERVICE`), nie die der echten Macs
@@ -30,15 +31,22 @@ final class PairLink {
     /// Name des anderen Macs (Treffer oder hello); Initiator eingehender Verbindungen
     private var partner: String?
     private var retryPending = false
-    /// Pairing-Code aus `pair(code:)`: gilt für Partner ohne gespeicherten Schlüssel
-    private var pendingCode: String?
+    /// Kopplung dieses Macs (nil = keine läuft)
+    private(set) var pairing: PairingState?
+    /// gekoppelter Partner (nil = nicht gekoppelt)
+    private(set) var paired: PairedPeer? = PairedPeer.load()
+    /// gefundene andere Macs (Bonjour-Namen)
+    private(set) var seen: [String] = []
+    /// letzte Meldung zur Kopplung (auch für E2E)
+    private(set) var note = ""
     /// Stand des anderen Macs (nach hello / state)
     private(set) var peer: (name: String, writes: Bool, decks: [Int])?
     /// LIVE-Schalter (nicht gespeichert): kein Ruhezustand
     @ObservationIgnored var onLive: ((Bool) -> Void)?
     /// Takt: dieser Mac führt Link (ohne Verbindung wie bisher); Stand des anderen und zuletzt gesendete Nachricht
     private var leads = true
-    private var peerPlaying = false, peerLeads = false
+    private var peerPlaying = false
+    private var peerLeads = false
     private var sentClock: PairMessage?
 
     private var connection: NWConnection? { active?.nw }
@@ -55,6 +63,7 @@ final class PairLink {
         }
         peer = nil
         partner = nil
+        pairing = nil
         dropTakt()
         listener?.cancel(); listener = nil
         browser?.cancel(); browser = nil
@@ -131,6 +140,11 @@ final class PairLink {
         let own = Self.computerName
         b.browseResultsChangedHandler = { results, _ in
             // jeder andere Mac; ausgehend verbinden, beide Seiten tun das
+            let names = results.compactMap { r -> String? in
+                guard case let .service(name, _, _, _) = r.endpoint, name != own else { return nil }
+                return name
+            }
+            Self.main { PairLink.shared.seen = Array(Set(names)).sorted() }
             for r in results {
                 guard case let .service(name, _, _, _) = r.endpoint, name != own else { continue }
                 let ep = r.endpoint
@@ -147,6 +161,12 @@ final class PairLink {
     /// ausgehend zu einem Treffer; höchstens ein Versuch je Gegenüber
     private func found(_ name: String, _ ep: NWEndpoint) {
         guard setup.on, active?.dialed != name, !candidates.contains(where: { $0.dialed == name }) else { return }
+        // Kopplung läuft: nur der Mac mit dem kleineren Namen wählt (eine Verbindung je Paar); sonst nur gekoppelte Partner
+        if let p = pairing {
+            guard p.peer == nil || p.peer == name, Self.keeps(initiator: Self.computerName, over: name) else { return }
+        } else if paired == nil {
+            return
+        }
         if E2E.isActive {
             // Ende-zu-Ende: Bonjour findet den Partner (echt), die Verbindung läuft über Loopback. macOS liefert eine
             // Verbindung an die eigene LAN-Adresse nicht an den eigenen Listener (geprüft), Loopback geht.
@@ -190,7 +210,7 @@ final class PairLink {
         guard let c = candidates.first(where: { $0.nw === nw }) else { return }
         switch s {
         case .ready:
-            write(c.hs.hello, to: nw)
+            if pairing != nil { beginRun(c) } else { write(c.hs.hello, to: nw) }
         case .failed, .waiting:
             drop(c)
             nw.cancel()
@@ -283,10 +303,83 @@ final class PairLink {
         write(frame, to: c.nw)
     }
 
-    /// Pairing-Code für den nächsten Partner ohne Schlüssel (E2E-Befehl `pair-code`)
-    func pair(code: String) {
-        pendingCode = code
-        StatusCenter.post(.info, String(localized: "Zwei-Mac: Pairing-Code gesetzt"), key: "pair")
+    /// Kopplung starten (Taste „Mit … koppeln“, E2E `pair-start`): Partner `name`, nil = der erste gefundene
+    @discardableResult
+    func startPairing(with name: String?) -> Bool {
+        guard setup.on, paired == nil, pairing == nil else { return false }
+        pairing = PairingState(peer: name, code: nil, confirmed: false)
+        candidates.filter { $0.chan == nil && $0.nw.state == .ready }.forEach { beginRun($0) }
+        browse()
+        return true
+    }
+
+    /// Vergleichszahl stimmt auf diesem Mac: bestätigen; gekoppelt ist erst, wenn der andere auch bestätigt hat
+    func confirmPairing() {
+        for c in candidates {
+            guard let sas = c.sas, !c.localConfirmed else { continue }
+            c.localConfirmed = true
+            pairing?.confirmed = true
+            write(.pairConfirm(sas.confirmation(from: PairIdentity.id)), to: c.nw)
+            _ = finishIfConfirmed(c)
+        }
+    }
+
+    /// Kopplung abbrechen: der andere Mac erfährt es über die Verbindung
+    func cancelPairing() {
+        guard pairing != nil else { return }
+        pairing = nil
+        for c in candidates where c.run != nil { closeAfterSending(c.nw, .pairReject) }
+        say(String(localized: "Kopplung abgebrochen"), .info)
+    }
+
+    /// Kopplung aufheben: Schlüssel weg, bestehende Verbindung ab
+    func unpair() {
+        guard let p = paired else { return }
+        PairKeychain.remove(p.id)
+        paired = nil
+        PairedPeer.save(nil)
+        active?.nw.cancel()
+        say(String(localized: "Kopplung aufgehoben"), .info)
+    }
+
+    /// Meldung zur Kopplung: Statuszeile und `note`
+    private func say(_ text: String, _ level: StatusMessage.Level = .warning) {
+        note = text
+        StatusCenter.post(level, text, key: "pair")
+    }
+
+    /// Kopplung auf dieser Verbindung beginnt: zuerst die Festlegung (Commit) senden
+    private func beginRun(_ c: PairConn) {
+        guard c.run == nil else { return }
+        let r = PairRendezvous(id: PairIdentity.id, name: Self.computerName)
+        c.run = r
+        write(.pairCommit(r.commitment), to: c.nw)
+    }
+
+    /// letzte Nachricht (optional), dann die Verbindung schließen
+    private func closeAfterSending(_ nw: NWConnection, _ f: PairFrame?) {
+        nw.send(content: f?.line(), contentContext: .finalMessage, isComplete: true,
+                completion: .contentProcessed { _ in nw.cancel() })
+    }
+
+    /// Kopplung gescheitert: Meldung, Sitzung zu, der andere Mac erfährt es
+    private func failPairing(_ c: PairConn, _ text: String) -> Bool {
+        say(text)
+        pairing = nil
+        closeAfterSending(c.nw, .pairReject)
+        return true
+    }
+
+    /// beide Seiten haben bestätigt: Schlüssel speichern, gekoppelt; die Verbindung geht danach sauber zu
+    private func finishIfConfirmed(_ c: PairConn) -> Bool {
+        guard c.localConfirmed, c.peerConfirmed, let sas = c.sas, let id = c.peerID, let name = c.peerName else { return true }
+        PairKeychain.set(sas.key, for: id)
+        paired = PairedPeer(id: id, name: name)
+        PairedPeer.save(paired)
+        pairing = nil
+        say(String(localized: "Gekoppelt mit \(name)"), .info)
+        closeAfterSending(c.nw, nil)
+        return true
     }
 
     private func write(_ f: PairFrame, to nw: NWConnection) {
@@ -304,39 +397,69 @@ final class PairLink {
     }
 
     private func shake(_ f: PairFrame, _ c: PairConn) -> Bool {
+        switch f {
+        case .pairCommit, .pairReveal, .pairConfirm, .pairReject:
+            return pairStep(f, c)
+        default:
+            break
+        }
+        // auf dieser Verbindung läuft eine Kopplung: der normale Handshake ist hier nicht erlaubt
+        if c.run != nil { return true }   // Kopplung läuft auf dieser Verbindung: Handshake-Frames ignorieren
         do {
-            if let reply = try c.hs.receive(f, key: { self.keyFor($0, of: c) }) { write(reply, to: c.nw) }
-            guard let ch = c.hs.channel(), let peer = c.hs.peerID else { return true }
+            if let reply = try c.hs.receive(f, key: { PairKeychain.get($0) }) { write(reply, to: c.nw) }
+            guard let ch = c.hs.channel() else { return true }
             c.chan = ch
-            if c.pairing, let k = c.key {
-                PairKeychain.set(k, for: peer)
-                pendingCode = nil
-                StatusCenter.post(.info, String(localized: "Zwei-Mac: gekoppelt mit \(peer)"), key: "pair")
-            }
             established(c)
             return owns(c)
         } catch {
-            if error as? PairAuthError == .unpaired {
-                if case let .hello(id, _) = f { StatusCenter.post(.warning, String(localized: "Not paired: \(id)"), key: "pair") }
-            } else {
-                StatusCenter.post(.warning, String(localized: "Pairing rejected: \(c.hs.peerID ?? "unknown")"), key: "pair")
-            }
-            return false
+            if error as? PairAuthError == .unpaired { return notPaired(f, c) }
+            let who = c.hs.peerID ?? c.dialed ?? String(localized: "unbekannt")
+            return failPairing(c, String(localized: "Pairing abgelehnt: \(who)"))
         }
     }
 
-    /// Schlüssel zum Partner: gespeichert, sonst aus dem Pairing-Code (nach erfolgreichem Handshake in der Keychain)
-    private func keyFor(_ id: String, of c: PairConn) -> SymmetricKey? {
-        if let k = PairKeychain.get(id) {
-            c.key = k
-            c.pairing = false
-            return k
+    private func notPaired(_ f: PairFrame, _ c: PairConn) -> Bool {
+        var name = c.dialed ?? String(localized: "unbekannt")
+        if case let .hello(_, n, _) = f { name = n }
+        say(String(localized: "Nicht gekoppelt: \(name)"))
+        return false
+    }
+
+    /// Kopplungsschritte auf dieser Verbindung: Festlegung, Aufdeckung, Bestätigung, Abbruch
+    private func pairStep(_ f: PairFrame, _ c: PairConn) -> Bool {
+        guard let run = c.run, pairing != nil else { return false }
+        switch f {
+        case let .pairCommit(h):
+            guard c.peerCommit == nil else { return false }
+            c.peerCommit = h
+            write(run.reveal, to: c.nw)
+            return true
+        case let .pairReveal(id, name, _, _):
+            guard let h = c.peerCommit, c.sas == nil else { return false }
+            do {
+                let sas = try run.finish(peerCommit: h, reveal: f)
+                c.sas = sas
+                c.peerID = id
+                c.peerName = name
+                pairing?.code = sas.code
+                pairing?.peer = name
+                return true
+            } catch {
+                return failPairing(c, String(localized: "Pairing abgelehnt: \(name)"))
+            }
+        case let .pairConfirm(mac):
+            guard let sas = c.sas, let id = c.peerID, sas.verify(mac, from: id) else {
+                let who = c.peerName ?? c.dialed ?? String(localized: "unbekannt")
+                return failPairing(c, String(localized: "Pairing abgelehnt: \(who)"))
+            }
+            c.peerConfirmed = true
+            return finishIfConfirmed(c)
+        case .pairReject:
+            let who = c.peerName ?? c.dialed ?? String(localized: "unbekannt")
+            return failPairing(c, String(localized: "Pairing abgelehnt: \(who)"))
+        default:
+            return false
         }
-        guard let code = pendingCode else { return nil }
-        let k = PairCrypto.deriveKey(code: code, idA: Self.computerName, idB: id)
-        c.key = k
-        c.pairing = true
-        return k
     }
 
     private func handle(_ m: PairMessage) {
@@ -455,13 +578,25 @@ fileprivate final class PairConn {
     /// Nachrichten vor der Aktivierung
     var pending: [PairMessage] = []
     /// Handshake; danach `chan` für die versiegelten Nachrichten
-    var hs = PairHandshake(ownID: PairLink.computerName)
+    var hs = PairHandshake(ownID: PairIdentity.id, ownName: PairLink.computerName)
     var chan: PairChannel?
-    var key: SymmetricKey?
-    var pairing = false
+    /// Kopplung auf dieser Verbindung: eigene Festlegung, Festlegung des Partners, Vergleich, Bestätigungen
+    var run: PairRendezvous?
+    var peerCommit: Data?
+    var sas: PairSAS?
+    var peerID: String?
+    var peerName: String?
+    var localConfirmed = false, peerConfirmed = false
 
     init(_ nw: NWConnection, dialed: String?) {
         self.nw = nw
         self.dialed = dialed
     }
+}
+
+/// Kopplung in Arbeit: Partner (Name, nil = der erste gefundene), Vergleichszahl sobald festgelegt
+struct PairingState: Equatable {
+    var peer: String?
+    var code: String?
+    var confirmed: Bool
 }

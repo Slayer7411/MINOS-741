@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Schreibt Metadaten-Änderungen in die collection.nml zurück.
@@ -378,11 +379,19 @@ public enum CollectionWriter {
         guard Darwin.fsync(dfd) == 0 else { throw ioError("Ordner synchronisieren (Datei ist ersetzt)", dir.path) }
     }
 
-    /// Exklusive Sperre (flock) auf die Sperrdatei neben der Collection, `timeout` Sekunden lang versucht.
-    /// Die Sperrdatei ist nicht die .nml selbst: die andere DJ-Software muss die Collection öffnen können.
-    /// Wirkt nur gegen andere Prozesse auf diesem Mac, die ebenfalls sperren
+    /// Sperrdatei zur Collection: unter Application Support (nicht im Collection-Ordner, der oft in einer Cloud liegt).
+    /// Name = Hash des Pfads. Wirkt nur gegen andere Prozesse auf diesem Mac, die ebenfalls sperren
+    static func lockURL(for url: URL) throws -> URL {
+        let dir = E2E.applicationSupport.appendingPathComponent("MINOS-741/locks", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let digest = SHA256.hash(data: Data(url.resolvingSymlinksInPath().standardizedFileURL.path.utf8))
+        return dir.appendingPathComponent(digest.prefix(8).map { String(format: "%02x", $0) }.joined() + ".lock")
+    }
+
+    /// Exklusive Sperre (flock) auf die Sperrdatei zur Collection (`lockURL`), `timeout` Sekunden lang versucht.
+    /// Die andere DJ-Software sperrt nicht mit; die Prüfung vor dem Ersetzen fängt ihre Änderungen ab
     static func withLock<T>(_ url: URL, timeout: TimeInterval = 5, _ body: () throws -> T) throws -> T {
-        let path = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).minos-lock").path
+        let path = try lockURL(for: url).path
         // O_EXLOCK = flock(LOCK_EX) beim Öffnen; O_NONBLOCK: bei Sperre sofort EWOULDBLOCK, dann erneut versuchen
         let deadline = Date().addingTimeInterval(timeout)
         var fd: Int32

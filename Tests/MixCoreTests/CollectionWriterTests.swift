@@ -134,9 +134,8 @@ private func outside(_ text: String, block: String) -> (String, String) {
                                           now: now.addingTimeInterval(3700))
     #expect(res4.backup != nil)
     #expect(try FileManager.default.contentsOfDirectory(atPath: backups.path).count == 3)
-    // keine Temp-Dateien liegen geblieben (die Sperrdatei `.collection.nml.minos-lock` bleibt bewusst liegen)
-    #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { !$0.hasSuffix(".minos-lock") }.sorted()
-        == ["Backup MINOS-741", "collection.nml"])
+    // keine Temp-Dateien liegen geblieben
+    #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path).sorted() == ["Backup MINOS-741", "collection.nml"])
 }
 
 /// Windows-Zeilenenden bleiben, neue Elemente bekommen dieselben

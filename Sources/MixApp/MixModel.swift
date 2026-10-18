@@ -88,6 +88,8 @@ final class MixModel {
     var settingsRequest: String?
     /// Link-Teilnehmer, wie die LINK-Taste sie zeigt (0 = nur „LINK“) – Größen-Schlüssel der Master-Clock-Leiste
     private(set) var linkPeersShown = 0
+    /// Tempo der Clock (Anzeige und Zwei-Mac-Leiste)
+    private(set) var clockBPMShown = 0.0
     private(set) var effectiveMaster: Int?
     private(set) var clockMaster = false
     /// TAKT (Zwei-Mac-Modus): dieser Mac führt Link (Schalter in der Leiste; setzt PairLink)
@@ -392,6 +394,7 @@ final class MixModel {
             if s.crossfader != crossfader { crossfader = s.crossfader }
             let peers = s.linkEnabled ? s.linkPeers : 0
             if peers != linkPeersShown { linkPeersShown = peers }
+            if s.clockBPM != clockBPMShown { clockBPMShown = s.clockBPM; PairLink.shared.tempoChanged(s.clockBPM) }
             if playingMaster != lastPlayingMaster { lastPlayingMaster = playingMaster; PairLink.shared.masterDeckChanged() }
             persistEdits()
         }

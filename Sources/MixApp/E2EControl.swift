@@ -141,8 +141,21 @@ final class E2EControl {
             done(r.ok, parsedBody(r.body))
 
         case "pair-start":
-            let ok = PairLink.shared.startPairing(with: a["name"] as? String)
+            let mode = (a["mode"] as? String).flatMap(PairMode.init(rawValue:)) ?? .session
+            let ok = PairLink.shared.startPairing(with: a["name"] as? String, mode: mode)
             done(ok, ["pairing": ok])
+
+        case "set-mode":
+            // `name` (gekoppelter Mac) und `mode` (session, b2b, off); ok = false bei Grenze oder unbekanntem Mac
+            let mode = (a["mode"] as? String).flatMap(PairMode.init(rawValue:))
+            guard let mode, let id = PairLink.shared.peers.first(where: { $0.name == a["name"] as? String })?.id else {
+                return done(false, "set-mode: Mac oder Modus fehlt")
+            }
+            done(PairLink.shared.setMode(mode, for: id), [:])
+
+        case "take-lead":
+            PairLink.shared.claimTakt()
+            done(true, [:])
 
         case "pair-confirm":
             guard let code = PairLink.shared.pairing?.code else { return done(false, "pair-confirm: noch kein Code") }
@@ -385,9 +398,14 @@ final class E2EControl {
         }
         let peer: Any = PairLink.shared.peer.map { ["name": $0.name, "writes": $0.writes, "decks": $0.decks] as [String: Any] } ?? NSNull()
         let pairingInfo: Any = PairLink.shared.pairing.map { ["peer": $0.peer ?? "", "code": $0.code ?? ""] as [String: Any] } ?? NSNull()
+        let peerList = PairLink.shared.peers.map { ["id": $0.id, "name": $0.name, "mode": $0.mode.rawValue] as [String: Any] }
+        let infoList = PairLink.shared.info.map { i -> [String: Any] in
+            ["id": i.id, "name": i.name, "mode": i.mode?.rawValue ?? NSNull(), "connected": i.connected,
+             "leader": i.leader, "bpm": i.bpm ?? NSNull()] }
         o["pair"] = ["on": PairLink.shared.setup.on, "writes": PairLink.shared.setup.writes, "decks": PairLink.shared.setup.decks,
                      "connected": PairLink.shared.connected, "peer": peer, "service": PairLink.service,
-                     "paired": PairLink.shared.paired?.name ?? NSNull(), "pairing": pairingInfo,
+                     "peers": peerList, "info": infoList, "lead": PairLink.shared.leadHolder ?? NSNull(),
+                     "paired": PairLink.shared.peers.first?.name ?? NSNull(), "pairing": pairingInfo,
                      "seen": PairLink.shared.seen, "note": PairLink.shared.note] as [String: Any]
         // Ausgabe: 0 = kein Gerät (Ende-zu-Ende), sonst die Geräte-Kennung des Ausgangs
         o["output"] = ["e2e": E2E.isActive, "deviceID": Int(mix.engine.outputDeviceID), "running": mix.engine.running,

@@ -71,20 +71,19 @@ enum PairIdentity {
     }()
 }
 
-/// Der gekoppelte Partner dieses Macs (ein Partner): Kennung (Keychain-Konto) und Name für die Anzeige
-struct PairedPeer: Equatable {
-    let id: String
-    let name: String
-
-    static func load() -> PairedPeer? {
-        guard let id = E2E.defaults.string(forKey: "pair.peerID"), let name = E2E.defaults.string(forKey: "pair.peerName") else {
-            return nil
-        }
-        return PairedPeer(id: id, name: name)
+/// Gekoppelte Macs (Liste, Modus je Mac). Alter Einzelpartner wird beim ersten Laden übernommen
+enum PairedPeerStore {
+    static func load() -> [PairedPeer] {
+        let legacyID = E2E.defaults.string(forKey: "pair.peerID"), legacyName = E2E.defaults.string(forKey: "pair.peerName")
+        let stored = E2E.defaults.data(forKey: "pair.peers").flatMap { try? JSONDecoder().decode([PairedPeer].self, from: $0) }
+        let list = PairPeers.migrated(list: stored, legacyID: legacyID, legacyName: legacyName)
+        if stored == nil, !list.isEmpty { save(list) }
+        E2E.defaults.removeObject(forKey: "pair.peerID")
+        E2E.defaults.removeObject(forKey: "pair.peerName")
+        return list
     }
 
-    static func save(_ p: PairedPeer?) {
-        E2E.defaults.set(p?.id, forKey: "pair.peerID")
-        E2E.defaults.set(p?.name, forKey: "pair.peerName")
+    static func save(_ list: [PairedPeer]) {
+        E2E.defaults.set(try? JSONEncoder().encode(list), forKey: "pair.peers")
     }
 }

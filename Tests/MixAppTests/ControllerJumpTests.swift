@@ -39,7 +39,7 @@ private enum Bit {
 
 @MainActor
 private final class Rig {
-    let core = MixController()
+    let core = testController()
     let manager: ControllerManager
     var units: [ControllerUnit] = []
     let url: URL

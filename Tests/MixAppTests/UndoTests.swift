@@ -21,7 +21,7 @@ private func silentWAV(seconds: Double) throws -> URL {
 
 @MainActor
 private final class Rig {
-    let core = MixController()
+    let core = testController()
     let stack = UndoStack()
     let rec: DeckUndoRecorder
     let url: URL

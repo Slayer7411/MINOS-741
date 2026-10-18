@@ -36,7 +36,7 @@ import MixCore
 }
 
 @MainActor @Test func controllerManagerStoresSidesAndSwaps() {
-    let core = MixController()
+    let core = testController()
     let manager = ControllerManager(core: core, status: ControllerStatus())
     let a = "TEST-A-\(UUID().uuidString)", b = "TEST-B-\(UUID().uuidString)"
     defer { for k in [a, b] { for p in ["x1.", "x1pane.", "x1fx."] { UserDefaults.standard.removeObject(forKey: p + k) } } }
@@ -62,7 +62,7 @@ import MixCore
 }
 
 @MainActor @Test func controllerManagerKeepsOwnDecksOnItsSide() {
-    let core = MixController()
+    let core = testController()
     let manager = ControllerManager(core: core, status: ControllerStatus())
     let a = "TEST-C-\(UUID().uuidString)"
     defer { for p in ["x1.", "x1pane.", "x1fx."] { UserDefaults.standard.removeObject(forKey: p + a) } }

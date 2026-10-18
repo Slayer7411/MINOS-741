@@ -28,7 +28,7 @@ private func report(loadLeft: Bool = false, loadRight: Bool = false, shift: Bool
 
 @MainActor
 private final class LoadRig {
-    let core = MixController()
+    let core = testController()
     let manager: ControllerManager
     let unit: ControllerUnit
     let url: URL

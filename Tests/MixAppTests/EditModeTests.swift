@@ -23,7 +23,7 @@ private func toneWAV(seconds: Double) throws -> URL {
 @MainActor
 struct EditModeTests {
     @Test func swapRenderedListAndBack() async throws {
-        let core = MixController()
+        let core = testController()
         let url = try toneWAV(seconds: 20)
         defer { try? FileManager.default.removeItem(at: url) }
         var t = Track(key: url.path, path: url.path)

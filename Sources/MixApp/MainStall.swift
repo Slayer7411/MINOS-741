@@ -15,6 +15,8 @@ enum MainStall {
         var over16 = 0, over50 = 0
         /// längste Lücke seit Start oder `reset` (ms)
         var maxMs = 0.0
+        /// Abgleiche des Mirrors (MixModel.pull) und davon mit Änderung des Zustands
+        var pulls = 0, changes = 0
     }
 
     /// Zeitpunkt des letzten Takts, vom Wächter gelesen (eigener Thread)
@@ -44,6 +46,12 @@ enum MainStall {
     }
 
     static func reset() { stats = Stats() }
+
+    /// einmal je Abgleich des Mirrors (MixModel.pull); `changed`: der Zustand hat sich geändert
+    static func pulled(changed: Bool) {
+        stats.pulls += 1
+        if changed { stats.changes += 1 }
+    }
 
     /// Zählerstand vor dem Zurücksetzen (E2E `ui-stats` mit `reset`: je Abschnitt ein Stand)
     static func takeStats() -> Stats {

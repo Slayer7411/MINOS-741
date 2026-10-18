@@ -144,7 +144,7 @@ final class E2EControl {
             // Lücken des Hauptthreads (MainStall); "reset": true liefert den Stand seit dem letzten Zurücksetzen und zählt dann neu
             let s = a["reset"] as? Bool == true ? MainStall.takeStats() : MainStall.stats
             done(true, ["ticks": s.ticks, "over16": s.over16, "over50": s.over50, "maxMs": (s.maxMs * 10).rounded() / 10,
-                        "pid": ProcessInfo.processInfo.processIdentifier])
+                        "pulls": s.pulls, "changes": s.changes, "pid": ProcessInfo.processInfo.processIdentifier])
 
         case "link":
             // Link ein/aus (wie LINK-Taste); "on" fehlt = umschalten

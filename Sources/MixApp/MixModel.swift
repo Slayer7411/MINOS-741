@@ -320,7 +320,9 @@ final class MixModel {
         mixerLink.transport(playing: (0..<MixEngine.deckCount).contains { deck($0).playing })
         var s = core.snapshot()
         for i in s.decks.indices { s.decks[i].nudge = 0 }
-        if s != state {
+        let changed = s != state
+        MainStall.pulled(changed: changed)
+        if changed {
             if MixController.debug {
                 changeCount += 1
                 if Date().timeIntervalSince(lastReport) > 2 {

@@ -20,6 +20,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 * settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit on an ERWEITERT sub-page per tab (link at the bottom of each tab; search and deep links open it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
 
 ### fixed
+* engine: plugin parameter reads and listener setup no longer run under the controller lock (a slow plugin stalled the 5 ms control tick)
 * updates: release downloads redirected to `release-assets.githubusercontent.com` were refused silently (check found nothing). redirect target allowed, https only. `Jetzt prüfen` shows every outcome with its reason; automatic failures go to the status log after the first one
 * fx golden test `fxPluginSlotBitIdenticalToOldChain` passes again: its hash was not updated with the glide snap (9f8fd46). the plugin slot output differs from the old chain only where the deck volume glide snaps to its target (from block 9, max 4.99e-5 relative); hash `0x6f8a07943193ddbf`
 

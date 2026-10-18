@@ -25,6 +25,19 @@
    ]
   },
   {
+   "do": "pause",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
+  },
+  {
    "do": "load",
    "args": {
     "deck": 1,
@@ -38,6 +51,19 @@
    ]
   },
   {
+   "do": "pause",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
+  },
+  {
    "do": "load",
    "args": {
     "deck": 2,
@@ -47,6 +73,19 @@
     {
      "path": "body.accepted",
      "equals": true
+    }
+   ]
+  },
+  {
+   "do": "pause",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
     }
    ]
   },
@@ -224,6 +263,19 @@
    "log": true
   },
   {
+   "do": "pause",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
+  },
+  {
    "do": "load",
    "args": {
     "deck": 1,
@@ -290,6 +342,19 @@
    "log": true
   },
   {
+   "do": "pause",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
+  },
+  {
    "do": "load",
    "args": {
     "deck": 2,
@@ -354,6 +419,19 @@
     "reset": true
    },
    "log": true
+  },
+  {
+   "do": "pause",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
   },
   {
    "do": "load",
@@ -422,6 +500,19 @@
    "log": true
   },
   {
+   "do": "pause",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
+  },
+  {
    "do": "load",
    "args": {
     "deck": 1,
@@ -486,6 +577,19 @@
     "reset": true
    },
    "log": true
+  },
+  {
+   "do": "pause",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
   },
   {
    "do": "load",
@@ -554,6 +658,19 @@
    "log": true
   },
   {
+   "do": "pause",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
+  },
+  {
    "do": "load",
    "args": {
     "deck": 3,
@@ -618,6 +735,19 @@
     "reset": true
    },
    "log": true
+  },
+  {
+   "do": "pause",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
   },
   {
    "do": "load",
@@ -686,6 +816,19 @@
    "log": true
   },
   {
+   "do": "pause",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
+  },
+  {
    "do": "load",
    "args": {
     "deck": 2,
@@ -750,6 +893,19 @@
     "reset": true
    },
    "log": true
+  },
+  {
+   "do": "pause",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": false
+    }
+   ]
   },
   {
    "do": "load",

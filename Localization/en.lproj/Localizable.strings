@@ -2195,5 +2195,6 @@
 "Playlist der Collection · Tracks hierher ziehen (wird in die Collection-Datei geschrieben)" = "Collection playlist · drag tracks here (written to the collection file)";
 "Smartlist der Collection · Regel: %@" = "Collection smartlist · rule: %@";
 "Smartlist – Tracks kommen über die Regel (Rechtsklick → Bearbeiten …)" = "Smartlist – tracks come from the rule (right-click → Edit …)";
+"Ordner der Collection – Tracks nur auf normale Playlists ziehen" = "Collection folder – drag tracks onto normal playlists only";
 "Playlist „%@“ nicht geändert: Schreiben in die Collection ist aus. Einstellungen → Collection → „Änderungen in die Collection-Datei schreiben“ einschalten." = "Playlist “%@” not changed: writing to the collection is off. Settings → Collection → turn on “Write changes to the collection file”.";
 "Playlist in der Collection nicht gefunden (Baum neu laden)" = "Playlist not found in the collection (reload the tree)";

@@ -217,7 +217,7 @@ struct PlaylistsSection: View, SourceMenus {
                     .treeDropZone(ui.regions, name: "collection drop \(node.name)", highlight: { on in
                         ui.dropTarget = on ? node.id : (ui.dropTarget == node.id ? nil : ui.dropTarget)
                     }, accepts: { strings in
-                        node.kind != .folder && strings.contains { TrackDrag.key($0) != nil }
+                        strings.contains { TrackDrag.key($0) != nil }
                     }) { strings in
                         dropCollection(node, strings)
                     }
@@ -285,8 +285,10 @@ extension PlaylistsSection {
     func dropCollection(_ node: PlaylistNode, _ strings: [String]) -> Bool {
         let keys = strings.compactMap(TreeDrag.track)
         guard !keys.isEmpty else { return false }
-        if node.kind == .smartlist {
-            let msg = String(localized: "Smartlist – Tracks kommen über die Regel (Rechtsklick → Bearbeiten …)")
+        if node.kind != .playlist {
+            let msg = node.kind == .smartlist
+                ? String(localized: "Smartlist – Tracks kommen über die Regel (Rechtsklick → Bearbeiten …)")
+                : String(localized: "Ordner der Collection – Tracks nur auf normale Playlists ziehen")
             store.status = msg
             StatusCenter.post(.info, msg, key: "playlist")
             return true

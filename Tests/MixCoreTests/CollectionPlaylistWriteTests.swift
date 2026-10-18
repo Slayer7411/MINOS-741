@@ -145,3 +145,27 @@ private func node(_ name: String, in c: Collection) -> PlaylistNode? { c.root.fi
 }
 
 private let pX = "Macintosh HD/:Music/:x.mp3"
+
+@Test func dropWriteChangesOnlyTheTargetPlaylistBytes() throws {
+    let (url, backups) = try playlistTempCopy(playlistNML)
+    defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+    var job = CollectionWriter.Job()
+    job.playlistEdits = [.init(uuid: uZiel, keys: [pB, pA])]
+    _ = try CollectionWriter.write(url: url, job: job, index: NMLEntryIndex(nmlText: playlistNML), backupDir: backups)
+    let after = try String(contentsOf: url, encoding: .utf8)
+    // Ziel-Knoten im Original: von „<NODE … NAME=\"Ziel\">“ bis zu seinem schließenden </NODE>
+    let nameAt = try #require(playlistNML.range(of: "NAME=\"Ziel\""))
+    let start = try #require(playlistNML.range(of: "<NODE TYPE=\"PLAYLIST\" NAME=\"Ziel\">")).lowerBound
+    let end = try #require(playlistNML.range(of: "</NODE>", range: nameAt.upperBound..<playlistNML.endIndex)).upperBound
+    let prefix = Array(playlistNML[..<start].utf8)
+    let suffix = Array(playlistNML[end...].utf8)
+    let bytes = Array(after.utf8)
+    #expect(bytes.count > prefix.count + suffix.count)
+    #expect(Array(bytes.prefix(prefix.count)) == prefix)
+    #expect(Array(bytes.suffix(suffix.count)) == suffix)
+    let middle = String(decoding: bytes[prefix.count..<(bytes.count - suffix.count)], as: UTF8.self)
+    #expect(middle.contains("ENTRIES=\"2\""))
+    #expect(middle.contains("UUID=\"\(uZiel)\""))
+    // der Rest der Datei ist unverändert: nur die Ziel-Playlist hat sich geändert
+    #expect(try NMLParser.parse(url: url).root.first { $0.name == "Regel" }?.kind == .smartlist)
+}

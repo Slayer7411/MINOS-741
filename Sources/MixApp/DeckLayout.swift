@@ -8,7 +8,7 @@ struct PairSetup: Codable, Equatable {
     /// Decks dieses Macs (0 = A … 3 = D), höchstens 2, aufsteigend
     var decks = [0, 2]
     /// Fernzugriff zum Analysieren: der andere Mac darf Stand abfragen und Einstellungen ändern (scripts/pairdebug.sh)
-    var remoteDebug = true
+    var remoteDebug = false
 
     static let maxDecks = 2
 

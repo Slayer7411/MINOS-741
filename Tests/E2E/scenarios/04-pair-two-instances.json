@@ -7,6 +7,8 @@
      "expect": [{"path": "ok", "equals": true}]},
     {"who": "B", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": false, "decks": [1, 3], "remoteDebug": true}}},
      "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "pair-code", "args": {"code": "123456"}, "expect": [{"path": "ok", "equals": true}]},
+    {"who": "B", "do": "pair-code", "args": {"code": "123456"}, "expect": [{"path": "ok", "equals": true}]},
     {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
       {"path": "body.pair.connected", "equals": true},
       {"path": "body.pair.peer.name", "equals": "${name:B}"}

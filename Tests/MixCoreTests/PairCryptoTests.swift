@@ -2,38 +2,46 @@ import Foundation
 import Testing
 @testable import MixCore
 
-/// zwei Handshakes mit Schlüsseln aus `codeA` / `codeB`; liefert beide nach dem Austausch aller Frames
+/// Handshake beider Macs mit den Schlüsseln aus `codeA` / `codeB`; liefert die Stände nach dem ersten Austausch
 private func handshake(codeA: String, codeB: String) throws -> (a: PairHandshake, b: PairHandshake, pa: PairFrame?, pb: PairFrame?) {
-    var a = PairHandshake(key: PairCrypto.deriveKey(code: codeA, idA: "Alpha", idB: "Beta"), ownID: "Alpha")
-    var b = PairHandshake(key: PairCrypto.deriveKey(code: codeB, idA: "Alpha", idB: "Beta"), ownID: "Beta")
+    let ka = PairCrypto.deriveKey(code: codeA, idA: "Alpha", idB: "Beta")
+    let kb = PairCrypto.deriveKey(code: codeB, idA: "Alpha", idB: "Beta")
+    var a = PairHandshake(ownID: "Alpha"), b = PairHandshake(ownID: "Beta")
     let ha = a.hello, hb = b.hello
-    let pa = try a.receive(hb)
-    let pb = try b.receive(ha)
+    let pa = try a.receive(hb) { _ in ka }
+    let pb = try b.receive(ha) { _ in kb }
     return (a, b, pa, pb)
 }
 
 @Test func pairHandshakeSameCodeAgreesOnSessionKey() throws {
     var (a, b, pa, pb) = try handshake(codeA: "123456", codeB: "123456")
-    #expect(try a.receive(try #require(pb)) == nil)
-    #expect(try b.receive(try #require(pa)) == nil)
+    let ka = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
+    #expect(try a.receive(try #require(pb)) { _ in ka } == nil)
+    #expect(try b.receive(try #require(pa)) { _ in ka } == nil)
     let sa = try #require(a.session), sb = try #require(b.session)
     #expect(PairCrypto.bytes(sa) == PairCrypto.bytes(sb))
-    #expect(PairCrypto.bytes(sa) != PairCrypto.bytes(PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")))
+    #expect(PairCrypto.bytes(sa) != PairCrypto.bytes(ka))
+    #expect(a.channel() != nil && b.channel() != nil)
 }
 
 @Test func pairHandshakeWrongCodeFails() throws {
     var (a, b, pa, pb) = try handshake(codeA: "123456", codeB: "654321")
-    #expect(throws: PairAuthError.rejected) { try a.receive(try #require(pb)) }
-    #expect(throws: PairAuthError.rejected) { try b.receive(try #require(pa)) }
+    let ka = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
+    let kb = PairCrypto.deriveKey(code: "654321", idA: "Alpha", idB: "Beta")
+    #expect(throws: PairAuthError.rejected) { try a.receive(try #require(pb)) { _ in ka } }
+    #expect(throws: PairAuthError.rejected) { try b.receive(try #require(pa)) { _ in kb } }
     #expect(a.session == nil && b.session == nil)
 }
 
-@Test func pairHandshakeRejectsReplayedProofAndBadHello() throws {
+@Test func pairHandshakeRejectsReplayAndUnknownPeer() throws {
     var (a, b, _, pb) = try handshake(codeA: "123456", codeB: "123456")
-    _ = try a.receive(try #require(pb))
-    #expect(throws: PairAuthError.rejected) { try a.receive(try #require(pb)) }
-    #expect(throws: PairAuthError.rejected) { try b.receive(.hello(id: "Beta", nonce: Data(count: 32))) }
-    #expect(throws: PairAuthError.rejected) { try b.receive(.hello(id: "Gamma", nonce: Data(count: 8))) }
+    let ka = PairCrypto.deriveKey(code: "123456", idA: "Alpha", idB: "Beta")
+    _ = try a.receive(try #require(pb)) { _ in ka }
+    #expect(throws: PairAuthError.rejected) { try a.receive(try #require(pb)) { _ in ka } }
+    #expect(throws: PairAuthError.rejected) { try b.receive(.hello(id: "Beta", nonce: Data(count: 32))) { _ in ka } }
+    var c = PairHandshake(ownID: "Gamma")
+    #expect(throws: PairAuthError.unpaired) { try c.receive(b.hello) { _ in nil } }
+    #expect(throws: PairAuthError.rejected) { try c.receive(.hello(id: "Delta", nonce: Data(count: 8))) { _ in ka } }
 }
 
 @Test func pairKeyIndependentOfIdOrder() {

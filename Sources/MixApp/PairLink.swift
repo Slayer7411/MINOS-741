@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import Network
 import SystemConfiguration
 import MixCore
@@ -29,6 +30,8 @@ final class PairLink {
     /// Name des anderen Macs (Treffer oder hello); Initiator eingehender Verbindungen
     private var partner: String?
     private var retryPending = false
+    /// Pairing-Code aus `pair(code:)`: gilt für Partner ohne gespeicherten Schlüssel
+    private var pendingCode: String?
     /// Stand des anderen Macs (nach hello / state)
     private(set) var peer: (name: String, writes: Bool, decks: [Int])?
     /// LIVE-Schalter (nicht gespeichert): kein Ruhezustand
@@ -187,18 +190,7 @@ final class PairLink {
         guard let c = candidates.first(where: { $0.nw === nw }) else { return }
         switch s {
         case .ready:
-            drop(c)
-            if let a = active {
-                // zweite Verbindung: nur eine bleibt, die andere geht still weg (kein Status, kein peer-Reset)
-                if keepsDuplicate(c, over: a) {
-                    a.nw.cancel()
-                    promote(c)
-                } else {
-                    nw.cancel()
-                }
-            } else {
-                promote(c)
-            }
+            write(c.hs.hello, to: nw)
         case .failed, .waiting:
             drop(c)
             nw.cancel()
@@ -208,6 +200,22 @@ final class PairLink {
             retryIfIdle()
         default:
             break
+        }
+    }
+
+    /// Handshake abgeschlossen: Dubletten entscheiden, der bereite Kandidat wird aktiv
+    private func established(_ c: PairConn) {
+        drop(c)
+        if let a = active {
+            // zweite Verbindung: nur eine bleibt, die andere geht still weg (kein Status, kein peer-Reset)
+            if keepsDuplicate(c, over: a) {
+                a.nw.cancel()
+                promote(c)
+            } else {
+                c.nw.cancel()
+            }
+        } else {
+            promote(c)
         }
     }
 
@@ -259,11 +267,11 @@ final class PairLink {
             Self.main {
                 let link = PairLink.shared
                 guard link.owns(c) else { return }
+                var ok = true
                 if let data {
-                    let msgs = c.reader.feed(data)
-                    if c === link.active { msgs.forEach(link.handle) } else { c.pending += msgs }
+                    for f in c.reader.feed(data) where ok { ok = link.accept(f, on: c) }
                 }
-                if done || error != nil { c.nw.cancel() } else { link.receive(c) }
+                if done || error != nil || !ok { c.nw.cancel() } else { link.receive(c) }
             }
         }
     }
@@ -271,8 +279,64 @@ final class PairLink {
     // MARK: Nachrichten
 
     func send(_ m: PairMessage) {
-        guard let c = connection, c.state == .ready else { return }
-        c.send(content: m.line(), completion: .contentProcessed { _ in })
+        guard let c = active, c.nw.state == .ready, let frame = try? c.chan?.seal(m.json()) else { return }
+        write(frame, to: c.nw)
+    }
+
+    /// Pairing-Code für den nächsten Partner ohne Schlüssel (E2E-Befehl `pair-code`)
+    func pair(code: String) {
+        pendingCode = code
+        StatusCenter.post(.info, String(localized: "Zwei-Mac: Pairing-Code gesetzt"), key: "pair")
+    }
+
+    private func write(_ f: PairFrame, to nw: NWConnection) {
+        nw.send(content: f.line(), completion: .contentProcessed { _ in })
+    }
+
+    /// Frame eines Kandidaten: vor dem Kanal der Handshake, danach versiegelte Nachrichten. false = Verbindung schließen
+    private func accept(_ f: PairFrame, on c: PairConn) -> Bool {
+        guard c.chan != nil else { return shake(f, c) }
+        guard let plain = try? c.chan?.open(f), let m = try? JSONDecoder().decode(PairMessage.self, from: plain) else {
+            return false
+        }
+        if c === active { handle(m) } else { c.pending.append(m) }
+        return true
+    }
+
+    private func shake(_ f: PairFrame, _ c: PairConn) -> Bool {
+        do {
+            if let reply = try c.hs.receive(f, key: { self.keyFor($0, of: c) }) { write(reply, to: c.nw) }
+            guard let ch = c.hs.channel(), let peer = c.hs.peerID else { return true }
+            c.chan = ch
+            if c.pairing, let k = c.key {
+                PairKeychain.set(k, for: peer)
+                pendingCode = nil
+                StatusCenter.post(.info, String(localized: "Zwei-Mac: gekoppelt mit \(peer)"), key: "pair")
+            }
+            established(c)
+            return owns(c)
+        } catch {
+            if error as? PairAuthError == .unpaired {
+                if case let .hello(id, _) = f { StatusCenter.post(.warning, String(localized: "Not paired: \(id)"), key: "pair") }
+            } else {
+                StatusCenter.post(.warning, String(localized: "Pairing rejected: \(c.hs.peerID ?? "unknown")"), key: "pair")
+            }
+            return false
+        }
+    }
+
+    /// Schlüssel zum Partner: gespeichert, sonst aus dem Pairing-Code (nach erfolgreichem Handshake in der Keychain)
+    private func keyFor(_ id: String, of c: PairConn) -> SymmetricKey? {
+        if let k = PairKeychain.get(id) {
+            c.key = k
+            c.pairing = false
+            return k
+        }
+        guard let code = pendingCode else { return nil }
+        let k = PairCrypto.deriveKey(code: code, idA: Self.computerName, idB: id)
+        c.key = k
+        c.pairing = true
+        return k
     }
 
     private func handle(_ m: PairMessage) {
@@ -387,9 +451,14 @@ final class PairLink {
 fileprivate final class PairConn {
     let nw: NWConnection
     let dialed: String?
-    var reader = PairLineReader<PairMessage>()
+    var reader = PairLineReader<PairFrame>()
     /// Nachrichten vor der Aktivierung
     var pending: [PairMessage] = []
+    /// Handshake; danach `chan` für die versiegelten Nachrichten
+    var hs = PairHandshake(ownID: PairLink.computerName)
+    var chan: PairChannel?
+    var key: SymmetricKey?
+    var pairing = false
 
     init(_ nw: NWConnection, dialed: String?) {
         self.nw = nw

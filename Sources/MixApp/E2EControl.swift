@@ -140,6 +140,11 @@ final class E2EControl {
             let r = PairDebugResponder.answer(command: "prefs-set", args: req.args, mix: mix, allowed: true)
             done(r.ok, parsedBody(r.body))
 
+        case "pair-code":
+            guard let code = a["code"] as? String, !code.isEmpty else { return done(false, "pair-code: Code fehlt") }
+            PairLink.shared.pair(code: code)
+            done(true, [:])
+
         case "ui-stats":
             // Lücken des Hauptthreads (MainStall); "reset": true liefert den Stand seit dem letzten Zurücksetzen und zählt dann neu
             let s = a["reset"] as? Bool == true ? MainStall.takeStats() : MainStall.stats

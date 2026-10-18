@@ -18,7 +18,7 @@ public enum PairFrame: Codable, Equatable, Sendable {
 }
 
 public enum PairAuthError: Error, Equatable, Sendable {
-    case rejected
+    case rejected, unpaired
 }
 
 /// Schlüssel aus dem Pairing-Code; Handshake und versiegelte Frames
@@ -31,42 +31,44 @@ public enum PairCrypto {
                                info: Data([idA, idB].sorted().joined(separator: "\u{0}").utf8), outputByteCount: 32)
     }
 
-    static func bytes(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
+    public static func bytes(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
 }
 
 /// Handshake einer Verbindung: beide Seiten schicken hello, nach dem hello des anderen ihr proof; das proof des
 /// anderen wird geprüft. Ergebnis: Sitzungsschlüssel aus Schlüssel und beiden Nonces.
 public struct PairHandshake: Sendable {
-    private let key: SymmetricKey
     private let ownID: String
     private let nonce: Data
-    private var peerID: String?
+    private var key: SymmetricKey?
+    public private(set) var peerID: String?
     private var peerNonce: Data?
     public private(set) var session: SymmetricKey?
 
-    public init(key: SymmetricKey, ownID: String) {
-        self.key = key
+    public init(ownID: String) {
         self.ownID = ownID
         nonce = Data((0..<32).map { _ in UInt8.random(in: .min ... .max) })
     }
 
     public var hello: PairFrame { .hello(id: ownID, nonce: nonce) }
 
-    /// Verarbeitet ein empfangenes Frame; liefert das zu sendende (proof) oder nil. Fehler: Verbindung schließen.
-    public mutating func receive(_ frame: PairFrame) throws -> PairFrame? {
+    /// Verarbeitet ein empfangenes Frame; `keyFor` liefert den Schlüssel zum Partner (nil: nicht gekoppelt).
+    /// Ergebnis: das zu sendende Frame (proof) oder nil. Fehler: Verbindung schließen.
+    public mutating func receive(_ frame: PairFrame, key keyFor: (String) -> SymmetricKey?) throws -> PairFrame? {
         switch frame {
         case let .hello(id, n):
             guard peerID == nil, id != ownID, n.count == 32 else { throw PairAuthError.rejected }
+            guard let k = keyFor(id) else { throw PairAuthError.unpaired }
             peerID = id
             peerNonce = n
+            key = k
             return .proof(mac(prover: ownID))
         case let .proof(m):
-            guard let id = peerID, let n = peerNonce, session == nil else { throw PairAuthError.rejected }
+            guard let id = peerID, let n = peerNonce, let k = key, session == nil else { throw PairAuthError.rejected }
             let s = sorted(id, n)
-            guard HMAC<SHA256>.isValidAuthenticationCode(m, authenticating: Self.transcript(s, prover: id), using: key) else {
+            guard HMAC<SHA256>.isValidAuthenticationCode(m, authenticating: Self.transcript(s, prover: id), using: k) else {
                 throw PairAuthError.rejected
             }
-            session = HKDF<SHA256>.deriveKey(inputKeyMaterial: key, salt: s[0].nonce + s[1].nonce, info: Data("session".utf8),
+            session = HKDF<SHA256>.deriveKey(inputKeyMaterial: k, salt: s[0].nonce + s[1].nonce, info: Data("session".utf8),
                                              outputByteCount: 32)
             return nil
         case .sealed:
@@ -81,8 +83,8 @@ public struct PairHandshake: Sendable {
     }
 
     private func mac(prover: String) -> Data {
-        guard let id = peerID, let n = peerNonce else { return Data() }
-        return Data(HMAC<SHA256>.authenticationCode(for: Self.transcript(sorted(id, n), prover: prover), using: key))
+        guard let id = peerID, let n = peerNonce, let k = key else { return Data() }
+        return Data(HMAC<SHA256>.authenticationCode(for: Self.transcript(sorted(id, n), prover: prover), using: k))
     }
 
     private func sorted(_ id: String, _ n: Data) -> [(id: String, nonce: Data)] {

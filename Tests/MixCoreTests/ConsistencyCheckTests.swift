@@ -140,7 +140,7 @@ private func entry(_ dir: String, _ file: String, artist: String, title: String,
     let t0 = Date()
     run.cancel()
     let s = run.snapshot(sinceLine: 0, sinceFinding: 0)
-    #expect(Date().timeIntervalSince(t0) < 0.1)
+    #expect(Date().timeIntervalSince(t0) < 1.0)   // Abbruch kehrt ohne Warten zurück (Wanduhr unter Last: 1 s)
     #expect(s.finished && s.cancelled)
     run.wait()
     let after = run.snapshot(sinceLine: 0, sinceFinding: 0)

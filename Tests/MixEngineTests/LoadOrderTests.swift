@@ -6,7 +6,7 @@ import MixEngine
 /// Zwei Ladevorgänge auf dasselbe Deck kurz hintereinander: der zuletzt gewählte Track gewinnt,
 /// auch wenn der erste (lange Datei, Ratenwandlung) später fertig dekodiert ist.
 @Test func lastLoadWinsWhenDecodesFinishOutOfOrder() async throws {
-    let c = MixController()
+    let c = testController()
     let rate = c.engine.sampleRate
     let slow = try writeWAV(rate: rate == 48000 ? 44100 : 48000, channels: 2, seconds: 150)
     let fast = try writeWAV(rate: rate, channels: 2, seconds: 1)

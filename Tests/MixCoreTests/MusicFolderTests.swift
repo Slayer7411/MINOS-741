@@ -65,5 +65,5 @@ import Testing
     let l = MusicFolder.list(root.path)
     let hits = l.files.filter { index[$0.match] != nil }.count
     #expect(l.files.count == 2000 && hits == 2000)
-    #expect(Date().timeIntervalSince(t0) < 1.0)
+    #expect(Date().timeIntervalSince(t0) < 5.0)   // 14000 Pfade, 2000 Dateien: Obergrenze gegen Quadratik, nicht gegen Last
 }

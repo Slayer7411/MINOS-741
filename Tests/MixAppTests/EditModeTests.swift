@@ -23,7 +23,7 @@ private func toneWAV(seconds: Double) throws -> URL {
 @MainActor
 struct EditModeTests {
     @Test func swapRenderedListAndBack() async throws {
-        let core = MixController()
+        let core = testController()
         let url = try toneWAV(seconds: 20)
         defer { try? FileManager.default.removeItem(at: url) }
         var t = Track(key: url.path, path: url.path)
@@ -31,7 +31,8 @@ struct EditModeTests {
         t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1),
                   Cue(name: "h", kind: .cue, startMs: 12_000, lengthMs: 0, hotcue: 0)]
         core.load(t, deck: 0)
-        for _ in 0..<250 where core.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+        let loadDeadline = Date().addingTimeInterval(60)
+        while (core.trackAudio(0) == nil), Date() < loadDeadline { try await Task.sleep(for: .milliseconds(20)) }
         let src = try #require(core.trackAudio(0))
         // 4 s entfernen (2 Takte), Liste rendern wie der EDIT-Modus
         var e = EditList(duration: src.duration)

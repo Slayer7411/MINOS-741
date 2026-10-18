@@ -15,7 +15,7 @@ private func controller(snap: Bool = true, _ edit: (inout EnginePrefs) -> Void =
         Cue(name: "Loop", kind: .loop, startMs: 4500, lengthMs: 2000, hotcue: -1),
         Cue(name: "Loop", kind: .loop, startMs: 20250, lengthMs: 1000, hotcue: 4),
     ]
-    let c = MixController()
+    let c = testController()
     var p = EnginePrefs()
     p.snap = snap
     edit(&p)

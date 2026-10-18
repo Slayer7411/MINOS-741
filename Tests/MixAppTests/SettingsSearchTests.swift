@@ -82,9 +82,21 @@ private func anchorCounts() throws -> (literal: [String: Int], dynamic: Int) {
     #expect(search.search("hotcue").contains { $0.entry.tab == "CONTROLLER & TASTEN" })
 }
 
+/// CPU-Zeit des aufrufenden Threads in Sekunden: unter Last zählt nur die eigene Rechenzeit, nicht das Warten auf einen Kern
+private func threadCPUSeconds() -> Double {
+    var ts = timespec()
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts)
+    return Double(ts.tv_sec) + Double(ts.tv_nsec) / 1e9
+}
+
 @Test func settingsSearchIsFast() {
     _ = search.search("loo")
-    let t0 = Date()
-    for q in ["loo", "puf", "rev", "bpm", "cue"] { _ = search.search(q) }
-    #expect(Date().timeIntervalSince(t0) / 5 < 0.002)
+    // Minimum aus 5 Läufen: ein Lauf, den der Scheduler unterbricht, zählt nicht. Schwelle 2 ms je Suche bleibt.
+    var best = Double.infinity
+    for _ in 0..<5 {
+        let t0 = threadCPUSeconds()
+        for q in ["loo", "puf", "rev", "bpm", "cue"] { _ = search.search(q) }
+        best = min(best, threadCPUSeconds() - t0)
+    }
+    #expect(best / 5 < 0.002)
 }

@@ -7,7 +7,7 @@ import MixCore
 // FX-Regler und -Tasten des Controllers = Schnellregler und Tasten der Unit (FX-Belegung, kein Sonderfall im Controller).
 
 @MainActor @Test func controllerFXKnobsAndButtonsFollowMapping() {
-    let core = MixController()
+    let core = testController()
     let manager = ControllerManager(core: core, status: ControllerStatus())
     let u = ControllerUnit(device: nil, info: .init(id: "FX", location: 0, left: 0, right: 1), manager: manager)
     func fx(_ i: Int) -> FXUnitState { core.snapshot().fx[i] }
@@ -48,7 +48,7 @@ import MixCore
 
 /// Beat-FX über den Controller: Gater/Flanger in der Gruppe, Phaser als einziger Slot, Shift + Mode = nächste Vorlage
 @MainActor @Test func controllerBeatFX() {
-    let core = MixController()
+    let core = testController()
     let manager = ControllerManager(core: core, status: ControllerStatus())
     let u = ControllerUnit(device: nil, info: .init(id: "FX", location: 0, left: 0, right: 1), manager: manager)
     func fx(_ i: Int) -> FXUnitState { core.snapshot().fx[i] }

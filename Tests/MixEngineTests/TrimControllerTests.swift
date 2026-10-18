@@ -10,7 +10,7 @@ private func controller(trim: TrackTrim = TrackTrim(start: 2, end: 20), gridEdit
     var t = Track(key: url.path, path: url.path)
     t.bpm = 120
     t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)]
-    let c = MixController()
+    let c = testController()
     c.load(t, deck: 0, trim: trim, gridEdited: gridEdited)
     for _ in 0..<100 where c.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
     #expect(c.trackAudio(0) != nil)
@@ -113,9 +113,9 @@ private func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-6 }
         c.tapGrid(0, at: t)
         #expect(c.snapshot().decks[0].gridEdited == (i == 3))
     }
-    #expect(abs(c.snapshot().decks[0].grid!.bpm - 127.66) < 0.01)
+    #expect(abs(try #require(c.snapshot().decks[0].grid).bpm - 127.66) < 0.01)
     c.tapGrid(0, at: 110)                 // Pause > 2 s: beginnt neu, ändert nichts
-    #expect(abs(c.snapshot().decks[0].grid!.bpm - 127.66) < 0.01)
+    #expect(abs(try #require(c.snapshot().decks[0].grid).bpm - 127.66) < 0.01)
 }
 
 @Test func loopFromRangeJumpsInAndKeepsTrim() async throws {

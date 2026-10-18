@@ -1061,6 +1061,8 @@ struct Workers {
     std::atomic<bool> started{false};      // setzt der Steuer-Thread, liest auch die Geräte-Queue (mdsp_set_workgroup)
     std::thread threads[N];
     int n = 0;                             // Frames des laufenden Teilblocks (vor dem Wecken gesetzt)
+    /// Teilblock-Zähler je Worker, beim Auftrag kopiert (der Audio-Thread zählt weiter, während ein verspäteter Worker noch rechnet)
+    std::atomic<uint64_t> subOf[N] {};
 #if defined(__APPLE__)
     dispatch_semaphore_t go[N] = {}, done[N] = {};
     std::mutex wgLock;                     // Steuer-Thread beim Setzen, Worker per try_lock beim Beitritt
@@ -1121,7 +1123,7 @@ struct MDEngine {
     float masterSm = 0.85f;
     uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
     std::atomic<uint64_t> renders{0};   // fertig gerechnete Blöcke (Plugin-Übergabe)
-    uint64_t subBlock = 0;              // laufender Teilblock (nur Audio-Thread, Worker lesen ihn nach dem Wecken)
+    uint64_t subBlock = 0;              // laufender Teilblock (nur Audio-Thread; Worker bekommen eine Kopie je Auftrag)
     double blockPos[MDSP_DECKS] = {};   // hörbare Positionen am Anfang des laufenden Blocks (nur Audio-Thread)
     MDPreview preview;                  // Vorhören (Preview.cpp)
     double fxBeat = 0, fxBps = 0;       // Clock am Anfang des Teilblocks, Beats je Sample (Beat-FX, Plugins)
@@ -1257,7 +1259,7 @@ static void mixDeck(MDEngine *e, Deck &d, float **out, int channels, int n);
 
 /// eine FX-Unit (bzw. den Master-Bus, unit = MDSP_FX_UNITS) auf einen Teilblock: Slots in Reihenfolge, danach klingen
 /// eingebaute Effekte aus, die nicht mehr im Rack stehen. Jeder Effekt rechnet nur, solange er an ist oder noch klingt
-static void runFX(MDEngine *e, FXChain &c, int u, float *L, float *R, int n) {
+static void runFX(MDEngine *e, FXChain &c, int u, float *L, float *R, int n, uint64_t sub) {
     auto &fp = e->fxp[u];
     Rack &rack = c.rack;
     rack.sync();
@@ -1347,11 +1349,11 @@ static void runFX(MDEngine *e, FXChain &c, int u, float *L, float *R, int n) {
     if (!rack.has(MDFX_KIND_PHASER)) phaser(false);
     if (!rack.has(MDFX_KIND_DELAY)) delay(false);
     if (!rack.has(MDFX_KIND_REVERB)) reverb(false);
-    rack.declick(L, R, n, e->subBlock);
+    rack.declick(L, R, n, sub);
 }
 
 /// ein Deck für einen Teilblock rechnen (Abspielen, Kanalzug, FX, Fader) -> d.outL/outR; die Summe macht mixDeck
-static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
+static void renderDeckBlock(MDEngine *e, Deck &d, int n, uint64_t sub) {
     d.blockHas = false; d.blockOk = true;
     // ausstehende Änderungen übernehmen
     uint32_t pg = d.pendingGen.exchange(0);
@@ -1486,7 +1488,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n) {
     // FX-Units
     for (int u = 0; u < MDSP_FX_UNITS; u++) {
         if (d.p[MD_FX1_ASSIGN + u].load() <= 0.5f) continue;
-        runFX(e, d.fx[u], u, L, R, n);
+        runFX(e, d.fx[u], u, L, R, n, sub);
     }
 
     // Lautstärke; Ausgangspaar und Summe in mixDeck (Audio-Thread, nach dem Join)
@@ -1606,7 +1608,7 @@ static void workerMain(MDEngine *e, int w) {
         // Auftrag übernehmen; zurückgezogen (Frist vorbei) oder veraltetes Wecken: nichts tun, nichts melden
         if (!W.job[w].compare_exchange_strong(j, (j & ~3u) | Workers::RENDERING, std::memory_order_acq_rel)) continue;
         if (stall && !stallFirst) usleep(stall);   // nur Tests: Worker hängt beim Rechnen
-        renderDeckBlock(e, d, W.n);
+        renderDeckBlock(e, d, W.n, W.subOf[w].load(std::memory_order_relaxed));
         W.job[w].store(j & ~3u, std::memory_order_release);   // IDLE, vor dem Signal: wer `done` sieht, sieht IDLE
         dispatch_semaphore_signal(W.done[w]);
     }
@@ -1674,6 +1676,7 @@ static void postWorkers(MDEngine *e, int n) {
         uint32_t t = (W.ticket[w] + 1) & 0x3fffffffu;
         W.ticket[w] = t;
         W.postedNs[w] = now;
+        W.subOf[w].store(e->subBlock, std::memory_order_relaxed);   // vor dem Auftrag (release unten)
         W.job[w].store(t << 2 | Workers::POSTED, std::memory_order_release);
         dispatch_semaphore_signal(W.go[w]);
     }
@@ -1993,12 +1996,12 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         for (int w = 0; w < Workers::N; w++) if (workerBusy(e, w)) { skip[w + 1] = true; busy = true; }
         if (!busy && e->workers.enabled.load(std::memory_order_acquire)) {
             postWorkers(e, n);
-            renderDeckBlock(e, e->decks[0], n);
+            renderDeckBlock(e, e->decks[0], n, e->subBlock);
             lap(RenderProfile::A);
             waitWorkers(e, n, done == 0 ? blockTicks : subBlockTicks(), skip);
             lap(RenderProfile::WAIT);
         } else {
-            for (int i = 0; i < MDSP_DECKS; i++) { if (!skip[i]) renderDeckBlock(e, e->decks[i], n); lap(RenderProfile::A + i); }
+            for (int i = 0; i < MDSP_DECKS; i++) { if (!skip[i]) renderDeckBlock(e, e->decks[i], n, e->subBlock); lap(RenderProfile::A + i); }
         }
         for (int i = 0; i < MDSP_DECKS; i++) if (!skip[i]) mixDeck(e, e->decks[i], o, std::min(channels, 64), n);
         // Master-Bus: nach der Summe, vor Master-Lautstärke und Begrenzung (Vorhören bleibt auf seinem Paar unberührt)
@@ -2010,7 +2013,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
             // leerer Bus ohne Fahnen kostet nichts
             if ((c.rack.present & ~1u) != 0 || c.delay.active() || c.reverb.active() || c.classic.active() || c.roll.active() ||
                 c.gater.active() || c.flanger.active() || c.phaser.active() || c.rack.pluginActive(e->fs))
-                runFX(e, c, MDSP_FX_UNITS, o[mch], o[mch + 1], n);
+                runFX(e, c, MDSP_FX_UNITS, o[mch], o[mch + 1], n, e->subBlock);
         }
         if (mch >= 0 && mch + 1 < std::min(channels, 64)) {
             float sum = 0, pk = 0;

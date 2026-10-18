@@ -141,10 +141,16 @@ final class E2EControl {
             done(r.ok, parsedBody(r.body))
 
         case "ui-stats":
-            // Lücken des Hauptthreads (MainStall); "reset": true zählt ab jetzt neu
-            if a["reset"] as? Bool == true { MainStall.reset() }
-            let s = MainStall.stats
-            done(true, ["ticks": s.ticks, "over16": s.over16, "over50": s.over50, "maxMs": (s.maxMs * 10).rounded() / 10])
+            // Lücken des Hauptthreads (MainStall); "reset": true liefert den Stand seit dem letzten Zurücksetzen und zählt dann neu
+            let s = a["reset"] as? Bool == true ? MainStall.takeStats() : MainStall.stats
+            done(true, ["ticks": s.ticks, "over16": s.over16, "over50": s.over50, "maxMs": (s.maxMs * 10).rounded() / 10,
+                        "pid": ProcessInfo.processInfo.processIdentifier])
+
+        case "link":
+            // Link ein/aus (wie LINK-Taste); "on" fehlt = umschalten
+            let on = a["on"] as? Bool
+            if let on { mix.setLink(on) } else { mix.toggleLink() }
+            done(true, ["linkEnabled": mix.state.linkEnabled])
 
         case "prefs-get", "status":
             let r = PairDebugResponder.answer(command: req.command, args: "", mix: mix, allowed: true)

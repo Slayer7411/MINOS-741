@@ -31,6 +31,13 @@ enum MainStall {
 
     static func reset() { stats = Stats() }
 
+    /// Zählerstand vor dem Zurücksetzen (E2E `ui-stats` mit `reset`: je Abschnitt ein Stand)
+    static func takeStats() -> Stats {
+        let s = stats
+        stats = Stats()
+        return s
+    }
+
     private static func tick() {
         let now = CACurrentMediaTime(), gap = (now - last) * 1000
         last = now
@@ -39,7 +46,10 @@ enum MainStall {
         if gap > 16 { stats.over16 += 1 }
         if gap > 50 {
             stats.over50 += 1
-            if MixController.debug { print(String(format: "[hitch] main thread %.0f ms", gap)); fflush(stdout) }
+            // Statusprotokoll (lokal): jede Lücke über 50 ms mit Uhrzeit, auch ohne MIX741_DEBUG
+            let line = String(format: "Hänger Hauptthread %.0f ms", gap)
+            StatusLogFile.shared.append("\(StatusLogFile.stamp(Date())) info \(line)")
+            if MixController.debug { print("[hitch] main thread \(Int(gap)) ms"); fflush(stdout) }
         }
     }
 }

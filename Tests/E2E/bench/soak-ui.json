@@ -1,0 +1,828 @@
+{
+ "name": "soak-ui",
+ "description": "Messung: vier Decks mit Keylock, Sync und Link, Track-Wechsel alle 60 s, Suche alle 20 s, zehn Minuten; ui-stats je Minute (Zurücksetzen = Stand seit der letzten Abfrage)",
+ "instances": [
+  "A"
+ ],
+ "steps": [
+  {
+   "do": "select-source",
+   "args": {
+    "source": "collection"
+   }
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 0,
+    "key": "${key:t01.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 1,
+    "key": "${key:t02.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 2,
+    "key": "${key:t03.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 3,
+    "key": "${key:t04.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "snapshot",
+   "timeout": 60,
+   "expect": [
+    {
+     "path": "body.decks.3.path",
+     "endswith": "t04.wav"
+    }
+   ]
+  },
+  {
+   "do": "sync",
+   "args": {
+    "deck": 1,
+    "on": true
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.sync",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "sync",
+   "args": {
+    "deck": 2,
+    "on": true
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.sync",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "sync",
+   "args": {
+    "deck": 3,
+    "on": true
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.sync",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "link",
+   "args": {
+    "on": true
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 1.0
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 0
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   }
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "the"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "mix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "dub"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 1,
+    "key": "${key:t06.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "acid"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "remix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "deep"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 2,
+    "key": "${key:t07.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "love"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "techno"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "the"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 3,
+    "key": "${key:t08.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "mix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "dub"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "acid"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 1,
+    "key": "${key:t09.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "remix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "deep"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "love"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 2,
+    "key": "${key:t10.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "techno"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "the"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "mix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 3,
+    "key": "${key:t05.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "dub"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "acid"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "remix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 1,
+    "key": "${key:t06.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 1
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "deep"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "love"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "techno"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 2,
+    "key": "${key:t07.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 2
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "the"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "mix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "dub"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "load",
+   "args": {
+    "deck": 3,
+    "key": "${key:t08.wav}"
+   },
+   "expect": [
+    {
+     "path": "body.accepted",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "play",
+   "args": {
+    "deck": 3
+   },
+   "retry": true,
+   "expect": [
+    {
+     "path": "body.playing",
+     "equals": true
+    }
+   ]
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "acid"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "remix"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "search",
+   "args": {
+    "pane": 0,
+    "text": "deep"
+   }
+  },
+  {
+   "do": "sleep",
+   "seconds": 19.0
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  },
+  {
+   "do": "ui-stats",
+   "args": {
+    "reset": true
+   },
+   "log": true
+  }
+ ]
+}

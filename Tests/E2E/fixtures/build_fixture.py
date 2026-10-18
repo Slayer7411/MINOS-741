@@ -15,7 +15,8 @@ import wave
 from xml.sax.saxutils import quoteattr
 
 RATE = 22050
-SECONDS = 8.0
+# Länge der Testdateien (s); E2E_FIXTURE_SECONDS: längere Dateien für Messungen (Standard 8)
+SECONDS = float(os.environ.get("E2E_FIXTURE_SECONDS", "8"))
 
 # Schlüssel: Schlüsselnummer wie MUSICAL_KEY (0–11 Dur, 12–23 Moll). Kommentar + Tags (RATING), Cues in ms.
 TRACKS = [

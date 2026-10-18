@@ -831,6 +831,7 @@ final class MixModel {
     func tap() { run { core.tap() } }
     func setMetronome(_ on: Bool, volume: Double? = nil) { run { core.setMetronome(on, volume: volume) } }
     func toggleLink() { run { core.setLinkEnabled(!state.linkEnabled) } }
+    func setLink(_ on: Bool) { if state.linkEnabled != on { toggleLink() } }
     /// Link-Diagnose in die Statusleiste (Rechtsklick auf LINK)
     func showLinkDiagnosis() {
         guard state.linkEnabled else { StatusCenter.shared.post(.info, String(localized: "Link ist aus"), key: "link"); return }

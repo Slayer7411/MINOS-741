@@ -59,7 +59,9 @@ final class CloudLibrary {
     private(set) var keepPending = 0
     private(set) var paused = false
 
-    @ObservationIgnored private var states: [String: FileProbe] = [:]
+    /// Zustände je Pfad; jede Änderung zählt `stateEpoch` hoch (eine Auswertung im Hintergrund gilt nur, wenn sie seit ihrem Start gleich blieb)
+    @ObservationIgnored private var states: [String: FileProbe] = [:] { didSet { stateEpoch &+= 1 } }
+    @ObservationIgnored private var stateEpoch = 0
     @ObservationIgnored private var active: Set<String> = []
     @ObservationIgnored private var queued: Set<String> = []
     @ObservationIgnored private var paths: [String] = []
@@ -135,27 +137,62 @@ final class CloudLibrary {
         checkFolder()
     }
 
-    /// alle Pfade neu prüfen (Hintergrund, Zeitgrenze je Datei)
+    /// alle Pfade neu prüfen (Hintergrund, Zeitgrenze je Datei). Übernehmen und Zählen (14k Pfade) im Hintergrund
     func rescan(quiet: Bool = true) {
         guard !paths.isEmpty else { return }
         guard !scanning else { scanAgain = true; return }
         scanning = true
-        let list = paths
+        let list = paths, before = states, epoch = stateEpoch
         scanQueue.async {
             let r = CloudScanner(fs: SystemCloudFileSystem()).scan(list)
+            let m = CloudLibrary.mergeScan(before, paths: list, probes: r.probes)
             DispatchQueue.main.async {
-                MainActor.assumeIsolated { CloudLibrary.shared.applyScan(list, r, quiet: quiet) }
+                MainActor.assumeIsolated { CloudLibrary.shared.applyScan(list, r, quiet: quiet, merged: m, epoch: epoch) }
             }
         }
     }
 
-    private func applyScan(_ list: [String], _ r: ScanReport, quiet: Bool) {
+    /// Ergebnis der Auswertung eines Laufs (pur, auch im Hintergrund)
+    struct ScanMerge: Sendable {
+        var states: [String: FileProbe]
+        var evicted: [String]
+        var changed: Bool
+        var counts: [CloudState: Int]
+    }
+
+    /// wie `merge` + `recount`, aber auf einer Kopie der Zustände; `paths` ist die Liste des Laufs
+    nonisolated static func mergeScan(_ before: [String: FileProbe], paths: [String], probes: [FileProbe]) -> ScanMerge {
+        var s = before, evicted: [String] = [], changed = false
+        for (p, probe) in zip(paths, probes) {
+            let old = s[p]
+            guard old != probe else { continue }
+            // nicht ermittelbar: alten Stand behalten
+            if probe.state == .unknown, old != nil { continue }
+            if old?.state == .local, probe.state == .cloud { evicted.append(p) }
+            s[p] = probe
+            changed = true
+        }
+        var c: [CloudState: Int] = [:]
+        for p in paths where CloudPaths.isCloudBacked(p) { c[s[p]?.state ?? .unknown, default: 0] += 1 }
+        return ScanMerge(states: s, evicted: evicted, changed: changed, counts: c)
+    }
+
+    private func applyScan(_ list: [String], _ r: ScanReport, quiet: Bool, merged m: ScanMerge, epoch: Int) {
         scanning = false
         guard list == paths else { rescan(quiet: quiet); return }
-        let evicted = merge(zip(list, r.probes).map { ($0, $1) })
+        let evicted: [String]
+        if epoch == stateEpoch {
+            // Zustände seit dem Start der Prüfung unverändert: Ergebnis aus dem Hintergrund übernehmen
+            states = m.states
+            if m.changed { revision += 1 }
+            counts = m.counts
+            evicted = m.evicted
+        } else {
+            evicted = merge(zip(list, r.probes).map { ($0, $1) })
+            recount()
+        }
         lastScan = Date()
         scanSeconds = r.seconds
-        recount()
         if scanAgain { scanAgain = false; rescan(quiet: true) }
         let c = counts
         if MixController.debug || Session.isSelfTest {

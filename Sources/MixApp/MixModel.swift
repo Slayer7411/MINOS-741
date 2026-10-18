@@ -312,12 +312,17 @@ final class MixModel {
     }
 
     /// Zustand vom Kern holen
+    @ObservationIgnored private var pulledRevision: UInt64?
     @ObservationIgnored private var changeCount = 0
     @ObservationIgnored private var lastReport = Date()
 
     func pull() {
         checkParallelWatchdog()
         mixerLink.transport(playing: (0..<MixEngine.deckCount).contains { deck($0).playing })
+        // Zustand des Kerns seit dem letzten Abgleich unverändert: kein Schnappschuss, kein Vergleich, nichts zu zeichnen
+        let rev = core.snapshotRevision()
+        guard rev != pulledRevision else { MainStall.pulled(changed: false); return }
+        pulledRevision = rev
         var s = core.snapshot()
         for i in s.decks.indices { s.decks[i].nudge = 0 }
         let changed = s != state

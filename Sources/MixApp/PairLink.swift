@@ -46,6 +46,21 @@ final class PairLink {
     /// dieser Mac führt Link (sonst folgt er der Führung); zuletzt gesendetes Tempo
     private var leads = true
     private var lastTempo = 0.0
+    /// B2B-Folger: Takt kommt über den Zwei-Mac-Kanal (Link folgt nicht); seit wann, letzter angenommener Takt
+    private var pairFollowHere = false
+    private var pairSince: Int64 = 0
+    private var clockAt: Int64 = 0
+    /// Weg des Takts: Verbindung, über die er kommt, und Zahl der Macs bis zur Führung
+    private var clockSource: String?
+    private var clockHops = Int.max
+    @ObservationIgnored private var clockTimer: DispatchSourceTimer?
+    private var clockTicks = 0
+    /// Folger: kein Takt der Führung mehr seit 2 s (Tempo bleibt, Statusleiste zeigt „lead lost“)
+    private(set) var leadLost = false
+    /// Abstand des eigenen Beats zum Takt der Führung in Beats (Anzeige und Prüfung, nil ohne Takt)
+    var pairLag: Double? {
+        mix?.core.pairLag()
+    }
 
     /// Einstellung übernehmen. An/aus baut die Verbindungen auf oder ab; Schreiber und Decks gehen über die bestehenden
     /// Verbindungen an die anderen Macs (kein Neuaufbau)
@@ -74,6 +89,7 @@ final class PairLink {
         guard new.on else {
             history.onPlayedChange = nil
             PairDebug.shared.stop()
+            clockTimer?.cancel(); clockTimer = nil
             StatusCenter.post(.info, String(localized: "Zwei-Mac: aus"), key: "pair")
             return
         }
@@ -82,6 +98,7 @@ final class PairLink {
         }
         listen()
         browse()
+        startClock()
         PairDebug.shared.start()
     }
 
@@ -214,6 +231,7 @@ final class PairLink {
     private func dropLink(_ c: PairConn) {
         guard links.contains(where: { $0 === c }) else { return }
         links.removeAll { $0 === c }
+        if c.id != nil, c.id == clockSource { clockSource = nil; clockHops = Int.max }
         if c.mode == .session { PairDebug.shared.connectionLost() }
         if c.name != nil { StatusCenter.post(.warning, String(localized: "Zwei-Mac: Verbindung getrennt"), key: "pair") }
         applyTakt()
@@ -550,6 +568,12 @@ final class PairLink {
             }
         case let .debugReply(id, ok, body):
             PairDebug.shared.received(id: id, ok: ok, body: body)
+        case let .ping(t0):
+            sendTo(c, .pong(t0: t0, t1: PairClock.nowMicros(), t2: PairClock.nowMicros()))
+        case let .pong(t0, t1, t2):
+            c.sync.add(t0: t0, t1: t1, t2: t2, t3: PairClock.nowMicros())
+        case let .pairClock(holder, bpm, beat, hostMicros, path):
+            takeClock(holder: holder, bpm: bpm, beat: beat, hostMicros: hostMicros, path: path, from: c)
         case let .clock(playing, _):
             guard mode == .session else { return }
             c.playing = playing
@@ -616,6 +640,9 @@ final class PairLink {
             return
         }
         text += " · " + (leads ? String(localized: "TAKT: dieser Mac") : String(localized: "TAKT: \(holderName)"))
+        if leadLost { text += " · lead lost"; level = .warning }
+        // Link-Teilnehmer ohne Kopplung: nur Anzeige, ohne Einfluss auf B2B-Folger
+        if let n = mix?.linkPeersShown, n > 0 { text += " · Link: \(n) (info)" }
         StatusCenter.post(level, text, key: "pair")
     }
 
@@ -649,13 +676,59 @@ final class PairLink {
         applyTakt()
     }
 
+    /// Takt der Führung annehmen (nur als Folger, nur vom Führenden, nur auf dem kürzesten Weg) und weiterleiten.
+    /// Die Nachricht trägt die Host-Zeit des Absenders; sie wird über den Uhrenabgleich der Verbindung umgerechnet
+    /// und beim Weiterleiten mit der eigenen Zeit neu gestempelt
+    private func takeClock(holder: String, bpm: Double, beat: Double, hostMicros: Int64, path: [String], from c: PairConn) {
+        guard let mix, !leads, pairFollowHere, holder == lead.holder, holder != PairIdentity.id,
+              !path.contains(PairIdentity.id), path.count <= 6, let off = c.sync.offset else { return }
+        let now = PairClock.nowMicros()
+        // zwei Wege zur Führung: der kürzere gewinnt; der aktuelle bleibt, solange er frisch ist
+        if now - clockAt < 500_000, c.id != clockSource, path.count > clockHops { return }
+        clockSource = c.id
+        clockHops = path.count
+        clockAt = now
+        mix.core.acceptPairClock(bpm: bpm, beat: beat, atMicros: hostMicros - off)
+        guard let s = mix.core.pairSample(atMicros: now) else { return }
+        for o in links where o !== c && o.mode != nil && o.id.map({ !path.contains($0) }) == true {
+            sendTo(o, .pairClock(holder: holder, bpm: s.bpm, beat: s.beat, hostMicros: now, path: path + [PairIdentity.id]))
+        }
+    }
+
+    private func startClock() {
+        guard clockTimer == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + 0.05, repeating: 0.05)
+        t.setEventHandler { MainActor.assumeIsolated { PairLink.shared.clockTick() } }
+        t.resume()
+        clockTimer = t
+    }
+
+    /// 20 Hz: die Führung sendet ihren Takt an alle Verbindungen; alle 0,5 s Ping zum Uhrenabgleich; Folger meldet Takt-Verlust
+    private func clockTick() {
+        clockTicks += 1
+        guard setup.on, let mix else { return }
+        let now = PairClock.nowMicros()
+        if leads, !links.isEmpty, let s = mix.core.clockSnapshot() {
+            for c in links where c.mode != nil {
+                sendTo(c, .pairClock(holder: PairIdentity.id, bpm: s.bpm, beat: s.beat, hostMicros: s.micros, path: [PairIdentity.id]))
+            }
+        }
+        if clockTicks % 10 == 0 {
+            for c in links where c.mode != nil { sendTo(c, .ping(t0: now)) }
+        }
+        let lost = pairFollowHere && now - max(clockAt, pairSince) > PairClock.staleMicros
+        if lost != leadLost { leadLost = lost; report() }
+    }
+
     /// Takt: welche Rolle dieser Mac hat (PairLead), im Paar entscheidet PairTempo; Link folgt, solange ein anderer führt
     private func applyTakt() {
         guard setup.on, let mix else { dropTakt(); return }
         let was = leads
         let connected = Set(links.compactMap { $0.id })
         let session = links.first { $0.mode == .session }
-        switch PairLead.role(own: PairIdentity.id, holder: lead.holder, partner: session?.id, connected: connected) {
+        let role = PairLead.role(own: PairIdentity.id, holder: lead.holder, partner: session?.id, connected: connected)
+        switch role {
         case .group:
             leads = true
         case .follow:
@@ -669,8 +742,13 @@ final class PairLink {
                 leads = true
             }
         }
-        // Folgen, solange ein anderer führt (Link trägt Tempo und Takt der Gruppe)
-        mix.core.setLinkFollow(!leads && !links.isEmpty)
+        // B2B-Folger (Führung ohne Session-Partner): Takt über den Zwei-Mac-Kanal, Link folgt nicht (Link-Teilnehmer
+        // im LAN steuern dann nichts). Führt der Session-Partner, folgt Link wie bisher
+        let pairHere = role == .follow && !leads && !links.isEmpty
+        if pairHere && !pairFollowHere { pairSince = PairClock.nowMicros(); leadLost = false }
+        pairFollowHere = pairHere
+        mix.core.setPairFollow(pairHere)
+        mix.core.setLinkFollow(!leads && !links.isEmpty && !pairHere)
         mix.setTaktHere(leads)
         let clock = PairMessage.clock(playingMaster: mix.playingMaster, leader: leads)
         for c in links where c.mode == .session && c.sentClock != clock {
@@ -704,6 +782,9 @@ final class PairLink {
     /// ohne Verbindung (oder Zwei-Mac aus) führt dieser Mac Link wie bisher
     private func dropTakt() {
         leads = true
+        pairFollowHere = false
+        leadLost = false
+        mix?.core.setPairFollow(false)
         mix?.core.setLinkFollow(false)
         mix?.setTaktHere(true)
         refresh()
@@ -744,6 +825,8 @@ fileprivate final class PairConn {
     var playing = false
     var bpm: Double?
     var sentClock: PairMessage?
+    /// Uhrenabgleich zum anderen Mac (Versatz, Laufzeit)
+    var sync = PairClockSync()
     /// Kopplung auf dieser Verbindung: eigene Festlegung, Festlegung des Partners, Vergleich, Bestätigungen
     var run: PairRendezvous?
     var peerCommit: Data?

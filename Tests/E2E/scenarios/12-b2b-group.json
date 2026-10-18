@@ -67,11 +67,11 @@
     {"who": "C", "do": "snapshot", "timeout": 60, "expect": [
       {"path": "body.pair.leader", "equals": "${idA}"},
       {"path": "body.pair.takt", "equals": false},
-      {"path": "body.pair.linkFollowing", "equals": true}
+      {"path": "body.pair.pairFollowing", "equals": true}, {"path": "body.pair.linkFollowing", "equals": false}, {"path": "body.pair.pairLag", "ge": -0.01}, {"path": "body.pair.pairLag", "le": 0.01}, {"path": "body.pair.leadLost", "equals": false}
     ]},
     {"who": "D", "do": "snapshot", "timeout": 60, "expect": [
       {"path": "body.pair.leader", "equals": "${idA}"},
-      {"path": "body.pair.linkFollowing", "equals": true}
+      {"path": "body.pair.pairFollowing", "equals": true}, {"path": "body.pair.linkFollowing", "equals": false}, {"path": "body.pair.pairLag", "ge": -0.01}, {"path": "body.pair.pairLag", "le": 0.01}, {"path": "body.pair.leadLost", "equals": false}
     ]},
     {"who": "A", "do": "snapshot", "timeout": 60, "expect": [
       {"path": "body.pair.leader", "equals": "${idA}"},
@@ -85,7 +85,7 @@
     ]},
     {"who": "D", "do": "snapshot", "timeout": 60, "expect": [
       {"path": "body.pair.leader", "equals": "${idC}"},
-      {"path": "body.pair.linkFollowing", "equals": true}
+      {"path": "body.pair.pairFollowing", "equals": true}, {"path": "body.pair.linkFollowing", "equals": false}, {"path": "body.pair.pairLag", "ge": -0.01}, {"path": "body.pair.pairLag", "le": 0.01}, {"path": "body.pair.leadLost", "equals": false}
     ]},
     {"who": "C", "do": "snapshot", "timeout": 60, "expect": [
       {"path": "body.pair.leader", "equals": "${idC}"},

@@ -1674,6 +1674,14 @@ public final class MixController: @unchecked Sendable {
     public func acceptPairClock(bpm: Double, beat: Double, atMicros: Int64) { pairClock.accept(bpm: bpm, beat: beat, atMicros: atMicros) }
     /// Tempo und Beat der Führung zur Host-Zeit (nil ohne frische Nachricht)
     public func pairSample(atMicros micros: Int64) -> (bpm: Double, beat: Double)? { pairClock.sample(atMicros: micros) }
+    /// Abstand dieser Clock zum Takt der Führung in Beats (nil ohne frische Nachricht)
+    public func pairLag() -> Double? {
+        locked {
+            guard let st = engine.clockStamp,
+                  let s = pairClock.sample(atMicros: LinkSession.micros(hostTicks: st.hostTime)) else { return nil }
+            return PairClock.phaseDiff(beat: st.beat, reference: s.beat)
+        }
+    }
     /// Tempo und Beat dieser Clock mit Host-Zeit (Takt-Nachricht als Führung)
     public func clockSnapshot() -> (bpm: Double, beat: Double, micros: Int64)? {
         locked {

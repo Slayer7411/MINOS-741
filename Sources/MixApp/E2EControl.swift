@@ -404,9 +404,11 @@ final class E2EControl {
              "leader": i.leader, "bpm": i.bpm ?? NSNull()] }
         o["pair"] = ["on": PairLink.shared.setup.on, "writes": PairLink.shared.setup.writes, "decks": PairLink.shared.setup.decks,
                      "connected": PairLink.shared.connected, "peer": peer, "service": PairLink.service,
-                     "peers": peerList, "info": infoList, "lead": PairLink.shared.leadHolder ?? NSNull(),
+                     "peers": peerList, "info": infoList,
                      "paired": PairLink.shared.peers.first?.name ?? NSNull(), "pairing": pairingInfo,
-                     "seen": PairLink.shared.seen, "note": PairLink.shared.note] as [String: Any]
+                     "seen": PairLink.shared.seen, "note": PairLink.shared.note,
+                     "id": PairIdentity.id, "leader": PairLink.shared.lead.holder ?? "", "leaderName": PairLink.shared.holderName, "clockBPM": mix.clockBPMShown,
+                     "linkPeers": mix.linkPeersShown, "linkFollowing": mix.state.linkFollowing, "takt": mix.taktHere] as [String: Any]
         // Ausgabe: 0 = kein Gerät (Ende-zu-Ende), sonst die Geräte-Kennung des Ausgangs
         o["output"] = ["e2e": E2E.isActive, "deviceID": Int(mix.engine.outputDeviceID), "running": mix.engine.running,
                        "rate": mix.engine.outputRate] as [String: Any]

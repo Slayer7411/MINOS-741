@@ -77,6 +77,14 @@ exchange. `snapshot` shows `body.pair.pairing.code` once both sides have reveale
 instance and replies with the code it shows. `pair-unpair` removes the stored key and drops the connection. The last
 pairing message is `body.pair.note` (`Paired with …`, `Not paired: …`, `Pairing rejected: …`, in the app language).
 
+Several Macs (B2B): each paired Mac has a mode (`session`, `b2b`, `off`). `pair-start` takes `mode` (default `session`); the
+two sides must start with the same mode. At most one session partner, at most seven B2B partners (eight Macs). A session
+partner gets everything (library played state, settings, LIVE, debug); a B2B partner gets only tempo, clock, hello and
+the lead (`body.pair.info`, `body.pair.leader`). The scenario `12-b2b-group` shows A+B as session, A–C and A–D as B2B.
+`body.pair.peers` lists the paired Macs (`id`, `name`, `mode`); `body.pair.id` is this instance's id; `body.pair.leader`
+is the id of the group's leader, `body.pair.takt` tells whether this instance leads, `body.pair.linkFollowing` whether
+it follows Link.
+
 Not isolated (known, see *Limitations*):
 - `~/Library/Preferences/com.github.slayer7411.minos741.e2e.*.plist`: the suite is a file in the user's Preferences
   folder. The runner deletes the suites it created (`defaults delete` + file removal) after each scenario. Only
@@ -122,7 +130,9 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `play` / `pause` | `deck` | `{deck, playing}`; idempotent |
 | `sync` | `deck`, `on` (default true) | `{deck, sync}` |
 | `master` | `deck` | `{deck, master}`: makes the deck the master (no-op if it already is) |
-| `pair-start` | `name` (optional): partner, default the first one found | `{pairing}` (true when started) |
+| `pair-start` | `name` (optional): partner, default the first one found; `mode` (`session` default, `b2b`) | `{pairing}` (true when started; false at the limit) |
+| `set-mode` | `name` (paired Mac), `mode` (`session`, `b2b`, `off`) | `{ok}`; false at the limit (one session partner, eight Macs) |
+| `take-lead` | – | `{ok}`: this instance takes the lead of the B2B group (same as the TAKT cell) |
 | `pair-confirm` | – | `{code}`: the comparison number shown here; confirms it |
 | `pair-unpair` | – | removes the pairing key and the connection |
 | `set-prefs` | JSON object, deep-merged into the app's preferences (same as `scripts/pairdebug.sh prefs-set`) | the merged preferences |

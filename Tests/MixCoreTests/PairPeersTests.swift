@@ -95,8 +95,9 @@ import Testing
     #expect(PairLead.role(own: "a", holder: "a", partner: "b", connected: ["b", "c"]) == .pair)
     // anderer B2B-Mac führt: dieser folgt
     #expect(PairLead.role(own: "a", holder: "c", partner: "b", connected: ["b", "c"]) == .follow)
-    // Führender nicht verbunden: Fallback wie ohne Führung
-    #expect(PairLead.role(own: "a", holder: "d", partner: "b", connected: ["b", "c"]) == .group)
+    // Führender über einen Dritten erreichbar: dieser folgt (kein direkter Draht nötig)
+    #expect(PairLead.role(own: "a", holder: "d", partner: "b", connected: ["b", "c"]) == .follow)
+    // Session-Partner (Führender) weg: Fallback wie ohne Führung
     #expect(PairLead.role(own: "a", holder: "b", partner: "b", connected: ["c"]) == .group)
 }
 

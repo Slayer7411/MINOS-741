@@ -1,0 +1,106 @@
+{
+  "name": "b2b-group",
+  "description": "Vier Macs: A+B als Session (Gespielt-Stand teilen sich), A–C und A–D als B2B (nur Takt). C und D folgen dem Takt der Führung, Führung wechselt per take-lead, C erhält keine Bibliotheks- oder Gespielt-Änderungen von A",
+  "instances": ["A", "B", "C", "D"],
+  "steps": [
+    {"who": "A", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": true, "decks": [0, 2], "remoteDebug": false}}},
+     "expect": [{"path": "ok", "equals": true}]},
+    {"who": "B", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": false, "decks": [1, 3], "remoteDebug": false}}},
+     "expect": [{"path": "ok", "equals": true}]},
+    {"who": "C", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": false, "decks": [0, 1], "remoteDebug": false}}},
+     "expect": [{"path": "ok", "equals": true}]},
+    {"who": "D", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": false, "decks": [2, 3], "remoteDebug": false}}},
+     "expect": [{"path": "ok", "equals": true}]},
+
+    {"who": "A", "do": "pair-start", "args": {"name": "${name:B}", "mode": "session"}, "expect": [{"path": "ok", "equals": true}]},
+    {"who": "B", "do": "pair-start", "args": {"name": "${name:A}", "mode": "session"}, "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "matches": "^[0-9]{6}$"}
+    ], "save": {"codeA": "body.pair.pairing.code"}},
+    {"who": "B", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "equals": "${codeA}"}
+    ], "save": {"codeB": "body.pair.pairing.code"}},
+    {"who": "A", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeB}"}]},
+    {"who": "B", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeA}"}]},
+    {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.connected", "equals": true},
+      {"path": "body.pair.peers.0.mode", "equals": "session"},
+      {"path": "body.pair.peer.name", "equals": "${name:B}"}
+    ], "save": {"idA": "body.pair.id"}},
+    {"who": "B", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.connected", "equals": true},
+      {"path": "body.pair.peer.name", "equals": "${name:A}"}
+    ], "save": {"idB": "body.pair.id"}},
+
+    {"who": "A", "do": "pair-start", "args": {"name": "${name:C}", "mode": "b2b"}, "expect": [{"path": "ok", "equals": true}]},
+    {"who": "C", "do": "pair-start", "args": {"name": "${name:A}", "mode": "b2b"}, "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "matches": "^[0-9]{6}$"}
+    ], "save": {"codeAC": "body.pair.pairing.code"}},
+    {"who": "C", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "equals": "${codeAC}"}
+    ], "save": {"codeC": "body.pair.pairing.code", "idC": "body.pair.id"}},
+    {"who": "A", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeC}"}]},
+    {"who": "C", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeAC}"}]},
+
+    {"who": "A", "do": "pair-start", "args": {"name": "${name:D}", "mode": "b2b"}, "expect": [{"path": "ok", "equals": true}]},
+    {"who": "D", "do": "pair-start", "args": {"name": "${name:A}", "mode": "b2b"}, "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "matches": "^[0-9]{6}$"}
+    ], "save": {"codeAD": "body.pair.pairing.code"}},
+    {"who": "D", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "equals": "${codeAD}"}
+    ], "save": {"codeD": "body.pair.pairing.code", "idD": "body.pair.id"}},
+    {"who": "A", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeD}"}]},
+    {"who": "D", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeAD}"}]},
+
+    {"who": "A", "do": "snapshot", "timeout": 120, "expect": [
+      {"path": "body.pair.peers.1.mode", "equals": "b2b"},
+      {"path": "body.pair.peers.2.mode", "equals": "b2b"}
+    ]},
+    {"who": "C", "do": "snapshot", "timeout": 120, "expect": [
+      {"path": "body.pair.peers.0.mode", "equals": "b2b"},
+      {"path": "body.pair.connected", "equals": false}
+    ]},
+
+    {"who": "A", "do": "take-lead", "expect": [{"path": "ok", "equals": true}]},
+    {"who": "C", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.leader", "equals": "${idA}"},
+      {"path": "body.pair.takt", "equals": false},
+      {"path": "body.pair.linkFollowing", "equals": true}
+    ]},
+    {"who": "D", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.leader", "equals": "${idA}"},
+      {"path": "body.pair.linkFollowing", "equals": true}
+    ]},
+    {"who": "A", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.leader", "equals": "${idA}"},
+      {"path": "body.pair.takt", "equals": true}
+    ]},
+
+    {"who": "C", "do": "take-lead", "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.leader", "equals": "${idC}"},
+      {"path": "body.pair.takt", "equals": false}
+    ]},
+    {"who": "D", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.leader", "equals": "${idC}"},
+      {"path": "body.pair.linkFollowing", "equals": true}
+    ]},
+    {"who": "C", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.leader", "equals": "${idC}"},
+      {"path": "body.pair.takt", "equals": true}
+    ]},
+
+    {"who": "A", "do": "mark-played", "args": {"keys": ["${key:t01.wav}"]}, "expect": [{"path": "body.played", "equals": 1}]},
+    {"who": "B", "do": "snapshot", "timeout": 20, "expect": [
+      {"path": "body.played.keys", "contains": "${key:t01.wav}"}
+    ]},
+    {"who": "C", "do": "snapshot", "timeout": 20, "expect": [
+      {"path": "body.played.count", "equals": 0}
+    ]},
+    {"who": "D", "do": "snapshot", "timeout": 20, "expect": [
+      {"path": "body.played.count", "equals": 0}
+    ]}
+  ]
+}

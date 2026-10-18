@@ -195,8 +195,6 @@ public struct MixState: Equatable, Sendable {
     public var linkForces = 0
     /// Link folgen (Zwei-Mac-Modus, der andere Mac führt): Tempo und Takt der Clock kommen von Link
     public var linkFollow = false
-    /// Link halten (B2B-Gruppe, ungekoppelter Link-Teilnehmer da): weder folgen noch führen
-    public var linkHold = false
     /// Folgen gerade aktiv (Link-Teilnehmer da; der Steuertick setzt es)
     public var linkFollowing = false
     public var crossfader: Double = 0
@@ -1667,7 +1665,6 @@ public final class MixController: @unchecked Sendable {
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
     /// Link folgen (Zwei-Mac-Modus, der andere Mac führt Link): Tempo und Takt kommen von Link, nicht von MINOS
     public func setLinkFollow(_ on: Bool) { locked { state.linkFollow = on } }
-    public func setLinkHold(_ on: Bool) { locked { state.linkHold = on } }
     /// Phasenabstand der Clock zu Link in Beats und Teilnehmer (Messung; auf der Steuer-Queue wie `lead`)
     public func linkPhase() -> (error: Double, peers: Int)? {
         controlQueue.sync {
@@ -2562,7 +2559,7 @@ public final class MixController: @unchecked Sendable {
             state.autoMaster = state.effectiveMaster   // Auto-Master klebt am laufenden Deck
             let master = state.effectiveMaster
             // Link folgen: nur mit Link-Teilnehmern (die Pair-Verbindung setzt linkFollow); sonst führt MINOS wie bisher
-            let following = state.linkEnabled && state.linkFollow && !state.linkHold && link.peers > 0
+            let following = state.linkEnabled && state.linkFollow && link.peers > 0
             state.linkFollowing = following
             if following != linkWasFollowing { linkWasFollowing = following; link.resetPolicies() }
             for d in state.decks.indices {
@@ -2634,7 +2631,7 @@ public final class MixController: @unchecked Sendable {
                             case .none: break
                             }
                         }
-                    } else if !state.linkHold, case .trim(let d) = link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime, canTrim: !clockOnDeck) {
+                    } else if case .trim(let d) = link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime, canTrim: !clockOnDeck) {
                         engine.trimClock(-d)
                     }
                     if link.stats.forces != state.linkForces { state.linkForces = link.stats.forces }

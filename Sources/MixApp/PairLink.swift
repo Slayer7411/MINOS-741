@@ -616,7 +616,6 @@ final class PairLink {
             return
         }
         text += " · " + (leads ? String(localized: "TAKT: dieser Mac") : String(localized: "TAKT: \(holderName)"))
-        if unpairedCount > 0 { text += " · " + String(localized: "\(unpairedCount) ungekoppelter Link-Teilnehmer ignoriert") }
         StatusCenter.post(level, text, key: "pair")
     }
 
@@ -670,10 +669,8 @@ final class PairLink {
                 leads = true
             }
         }
-        // Folgen nur, wenn ein anderer führt; ungekoppelte Link-Teilnehmer werden dabei nicht übernommen
-        let follow = !leads && !links.isEmpty
-        mix.core.setLinkFollow(follow)
-        mix.core.setLinkHold(follow && unpairedCount > 0)
+        // Folgen, solange ein anderer führt (Link trägt Tempo und Takt der Gruppe)
+        mix.core.setLinkFollow(!leads && !links.isEmpty)
         mix.setTaktHere(leads)
         let clock = PairMessage.clock(playingMaster: mix.playingMaster, leader: leads)
         for c in links where c.mode == .session && c.sentClock != clock {
@@ -684,21 +681,12 @@ final class PairLink {
         if leads != was { report() }
     }
 
-    /// gekoppelte Macs ohne Verbindung zählen nicht; Link-Teilnehmer, die keiner von ihnen sind, sind „ungekoppelt“
-    private var unpairedCount: Int {
-        guard let mix, links.contains(where: { $0.mode == .b2b }) else { return 0 }
-        return max(0, mix.linkPeersShown - links.count)
-    }
-
     /// Name des Führenden (Leiste, Statuszeile)
-    private var holderName: String {
+    var holderName: String {
         guard let h = lead.holder else { return Self.computerName }
         if h == PairIdentity.id { return Self.computerName }
         return links.first { $0.id == h }?.name ?? peers.first { $0.id == h }?.name ?? h
     }
-
-    /// Führender der B2B-Gruppe (Kennung), für E2E
-    var leadHolder: String? { lead.holder }
 
     /// Leiste: dieser Mac, dann die verbundenen gekoppelten Macs (Name, Modus, Führung, Tempo)
     private func refresh() {
@@ -717,7 +705,6 @@ final class PairLink {
     private func dropTakt() {
         leads = true
         mix?.core.setLinkFollow(false)
-        mix?.core.setLinkHold(false)
         mix?.setTaktHere(true)
         refresh()
     }

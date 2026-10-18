@@ -100,15 +100,16 @@ public struct PairLead: Equatable, Sendable {
         return holder < h
     }
 
-    /// Rolle dieses Macs: `group` = führt über die Gruppe (auch ohne bekannten Führenden), `pair` = Takt entscheidet
-    /// das Paar (Session-Partner, PairTempo), `follow` = folgt dem Führenden
+    /// Rolle dieses Macs: `group` = führt über die Gruppe (ohne Führenden, oder der Führende ist nicht mehr da),
+    /// `pair` = Takt entscheidet das Paar (Session-Partner, PairTempo), `follow` = ein anderer Mac führt (auch wenn er
+    /// nur über einen Dritten erreichbar ist)
     public enum Role: Equatable, Sendable { case group, pair, follow }
 
     public static func role(own: String, holder: String?, partner: String?, connected: Set<String>) -> Role {
         guard let h = holder else { return .group }
         if h == own { return partner.map(connected.contains) == true ? .pair : .group }
         if h == partner { return connected.contains(h) ? .pair : .group }
-        return connected.contains(h) ? .follow : .group
+        return .follow
     }
 }
 

@@ -420,7 +420,7 @@ struct CentredBar: Layout {
         if c.width <= w, side == 0 || side + gap <= (w - c.width) / 2 {
             let h = max(l.height, c.height, r.height)
             frames[0] = CGRect(x: 0, y: (h - l.height) / 2, width: l.width, height: l.height)
-            frames[1] = CGRect(x: (w - c.width) / 2, y: (h - c.height) / 2, width: c.width, height: c.height)
+            frames[1] = CGRect(x: (w - c.width) / 2, y: 0, width: c.width, height: h)
             frames[2] = CGRect(x: w - r.width, y: (h - r.height) / 2, width: r.width, height: r.height)
             return (CGSize(width: w, height: h), frames)
         }
@@ -485,7 +485,7 @@ struct TopBar: View {
                 MasterClockPanel()
                 BarCounter()
                 Button { mix.core.resetSession() } label: {
-                    Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z, height: 42.z)
+                    Text("↺").font(Theme.mono(14.z)).foregroundStyle(Theme.bone).frame(width: 22.z).frame(minHeight: 42.z, maxHeight: .infinity)
                 }
                 .buttonStyle(.plain)
                 .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
@@ -523,7 +523,7 @@ struct MasterClockPanel: View {
                 .help("Einstellungen (⌘,)")
         }
         .padding(.horizontal, 8.z)
-        .frame(height: 42.z)   // gleiche Höhe wie Bar-Zähler, Uhr und Aufnahme
+        .frame(minHeight: 42.z, maxHeight: .infinity)   // Zeilenhöhe: füllt die Mitte bis zur Höhe der FX-Units
         .background(Rectangle().fill(Theme.deck))
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
     }
@@ -618,7 +618,7 @@ struct SessionClockView: View {
             Text(verbatim: elapsed)
                 .font(Theme.mono(13.z, .semibold)).foregroundStyle(watch.start == nil ? Theme.muted : Theme.bone)
         }
-        .frame(width: 58.z, height: 42.z)
+        .frame(width: 58.z).frame(minHeight: 42.z, maxHeight: .infinity)
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture { watch.reset() }
@@ -688,7 +688,7 @@ struct BarCounter: View {
                 CG.text("\(n)", size: 8, weight: "Regular", color: CG.mutedNS, rightAt: x0 - 3, y: y - 1)
             }
         }
-        .frame(width: 300.z, height: 42.z)
+        .frame(width: 300.z).frame(minHeight: 42.z, maxHeight: .infinity)
         .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
         .onTapGesture(count: 2) { mix.core.resetSession() }
         .help("Bar-Zähler: läuft ab dem ersten Play, die große Zahl zählt innerhalb der Phrase · Doppelklick = neu auf Takt 1")

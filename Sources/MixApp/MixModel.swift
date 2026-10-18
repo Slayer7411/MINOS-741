@@ -312,15 +312,22 @@ final class MixModel {
     }
 
     /// Zustand vom Kern holen
+    @ObservationIgnored private var pulledRevision: UInt64?
     @ObservationIgnored private var changeCount = 0
     @ObservationIgnored private var lastReport = Date()
 
     func pull() {
         checkParallelWatchdog()
         mixerLink.transport(playing: (0..<MixEngine.deckCount).contains { deck($0).playing })
+        // Zustand des Kerns seit dem letzten Abgleich unverändert: kein Schnappschuss, kein Vergleich, nichts zu zeichnen
+        let rev = core.snapshotRevision()
+        guard rev != pulledRevision else { MainStall.pulled(changed: false); return }
+        pulledRevision = rev
         var s = core.snapshot()
         for i in s.decks.indices { s.decks[i].nudge = 0 }
-        if s != state {
+        let changed = s != state
+        MainStall.pulled(changed: changed)
+        if changed {
             if MixController.debug {
                 changeCount += 1
                 if Date().timeIntervalSince(lastReport) > 2 {
@@ -831,6 +838,7 @@ final class MixModel {
     func tap() { run { core.tap() } }
     func setMetronome(_ on: Bool, volume: Double? = nil) { run { core.setMetronome(on, volume: volume) } }
     func toggleLink() { run { core.setLinkEnabled(!state.linkEnabled) } }
+    func setLink(_ on: Bool) { if state.linkEnabled != on { toggleLink() } }
     /// Link-Diagnose in die Statusleiste (Rechtsklick auf LINK)
     func showLinkDiagnosis() {
         guard state.linkEnabled else { StatusCenter.shared.post(.info, String(localized: "Link ist aus"), key: "link"); return }

@@ -83,7 +83,8 @@ partner gets everything (library played state, settings, LIVE, debug); a B2B par
 the lead (`body.pair.info`, `body.pair.leader`). The scenario `12-b2b-group` shows A+B as session, A–C and A–D as B2B.
 `body.pair.peers` lists the paired Macs (`id`, `name`, `mode`); `body.pair.id` is this instance's id; `body.pair.leader`
 is the id of the group's leader, `body.pair.takt` tells whether this instance leads, `body.pair.linkFollowing` whether
-it follows Link.
+it follows Link (false for followers: they take the pair clock), `body.pair.pairFollowing` whether it follows
+the pair clock (B2B group or session partner).
 
 Not isolated (known, see *Limitations*):
 - `~/Library/Preferences/com.github.slayer7411.minos741.e2e.*.plist`: the suite is a file in the user's Preferences

@@ -46,8 +46,10 @@ final class PairLink {
     /// dieser Mac führt Link (sonst folgt er der Führung); zuletzt gesendetes Tempo
     private var leads = true
     private var lastTempo = 0.0
-    /// B2B-Folger: Takt kommt über den Zwei-Mac-Kanal (Link folgt nicht); seit wann, letzter angenommener Takt
+    /// Folger (B2B-Gruppe oder Session-Partner): Takt kommt über den Zwei-Mac-Kanal (Link folgt nie); seit wann,
+    /// letzter angenommener Takt. `pairLeader` ist die Kennung, deren `pairClock` angenommen wird
     private var pairFollowHere = false
+    private var pairLeader: String?
     private var pairSince: Int64 = 0
     private var clockAt: Int64 = 0
     /// Weg des Takts: Verbindung, über die er kommt, und Zahl der Macs bis zur Führung
@@ -680,7 +682,7 @@ final class PairLink {
     /// Die Nachricht trägt die Host-Zeit des Absenders; sie wird über den Uhrenabgleich der Verbindung umgerechnet
     /// und beim Weiterleiten mit der eigenen Zeit neu gestempelt
     private func takeClock(holder: String, bpm: Double, beat: Double, hostMicros: Int64, path: [String], from c: PairConn) {
-        guard let mix, !leads, pairFollowHere, holder == lead.holder, holder != PairIdentity.id,
+        guard let mix, !leads, pairFollowHere, holder == pairLeader, holder != PairIdentity.id,
               !path.contains(PairIdentity.id), path.count <= 6, let off = c.sync.offset else { return }
         let now = PairClock.nowMicros()
         // zwei Wege zur Führung: der kürzere gewinnt; der aktuelle bleibt, solange er frisch ist
@@ -742,13 +744,14 @@ final class PairLink {
                 leads = true
             }
         }
-        // B2B-Folger (Führung ohne Session-Partner): Takt über den Zwei-Mac-Kanal, Link folgt nicht (Link-Teilnehmer
-        // im LAN steuern dann nichts). Führt der Session-Partner, folgt Link wie bisher
-        let pairHere = role == .follow && !leads && !links.isEmpty
+        // Folger (Führung über die B2B-Gruppe, oder der Session-Partner führt im Paar): Takt über den Zwei-Mac-Kanal
+        // (authentifizierte Kopplung). Link folgt nie – Link-Teilnehmer im LAN steuern dann nichts, Link bleibt Ausgang
+        let pairHere = !leads && !links.isEmpty && (role == .follow || role == .pair)
+        pairLeader = !pairHere ? nil : role == .follow ? lead.holder : session?.id
         if pairHere && !pairFollowHere { pairSince = PairClock.nowMicros(); leadLost = false }
         pairFollowHere = pairHere
         mix.core.setPairFollow(pairHere)
-        mix.core.setLinkFollow(!leads && !links.isEmpty && !pairHere)
+        mix.core.setLinkFollow(false)
         mix.setTaktHere(leads)
         let clock = PairMessage.clock(playingMaster: mix.playingMaster, leader: leads)
         for c in links where c.mode == .session && c.sentClock != clock {
@@ -783,6 +786,7 @@ final class PairLink {
     private func dropTakt() {
         leads = true
         pairFollowHere = false
+        pairLeader = nil
         leadLost = false
         mix?.core.setPairFollow(false)
         mix?.core.setLinkFollow(false)

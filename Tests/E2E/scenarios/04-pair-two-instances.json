@@ -27,6 +27,20 @@
       {"path": "body.pair.paired", "equals": "${name:A}"},
       {"path": "body.pair.peer.name", "equals": "${name:A}"}
     ]},
+    {"who": "A", "do": "snapshot", "expect": [{"path": "body.pair.id", "matches": "^.+$"}], "save": {"idA": "body.pair.id"}},
+    {"who": "A", "do": "take-lead", "expect": [{"path": "ok", "equals": true}]},
+    {"who": "B", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.leader", "equals": "${idA}"},
+      {"path": "body.pair.takt", "equals": false},
+      {"path": "body.pair.pairFollowing", "equals": true},
+      {"path": "body.pair.linkFollowing", "equals": false},
+      {"path": "body.pair.leadLost", "equals": false}
+    ]},
+    {"who": "A", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.takt", "equals": true},
+      {"path": "body.pair.pairFollowing", "equals": false},
+      {"path": "body.pair.linkFollowing", "equals": false}
+    ]},
     {"who": "A", "do": "mark-played", "args": {"keys": ["${key:t01.wav}"]}, "expect": [{"path": "body.played", "equals": 1}]},
     {"who": "B", "do": "snapshot", "timeout": 20, "expect": [
       {"path": "body.played.count", "equals": 1},

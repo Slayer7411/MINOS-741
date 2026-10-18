@@ -248,7 +248,9 @@ public final class MixController: @unchecked Sendable {
     public let controlQueue = DispatchQueue(label: "minos741.control", qos: .userInteractive)
 
     private let lock = NSRecursiveLock()
-    private var state = MixState()
+    /// Zustand des Kerns; jede Änderung zählt `revision` hoch (der Mirror holt den Schnappschuss nur dann)
+    private var state = MixState() { didSet { revision &+= 1 } }
+    private var revision: UInt64 = 0
     private var audio: [TrackAudio?] = Array(repeating: nil, count: MixEngine.deckCount)
     /// zählt Ladevorgänge je Deck: nur der zuletzt gestartete darf das Deck belegen
     /// (zwei Ladevorgänge kurz hintereinander enden sonst in beliebiger Reihenfolge)
@@ -297,6 +299,8 @@ public final class MixController: @unchecked Sendable {
     // MARK: Zugriff
 
     public func snapshot() -> MixState { locked { state } }
+    /// Zähler der Zustandsänderungen; gleicher Wert = `snapshot()` unverändert (zuerst lesen, dann holen)
+    public func snapshotRevision() -> UInt64 { locked { revision } }
     public func trackAudio(_ d: Int) -> TrackAudio? { locked { audio[d] } }
     public func position(_ d: Int) -> Double { engine.position(d) }
     /// hörbare Spielzeit seit dem Laden (für die History-Dauer)

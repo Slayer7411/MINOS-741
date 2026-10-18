@@ -26,6 +26,7 @@ The `self-update` scenario (`05-self-update.json`) builds its own app bundles an
 network and never touches `/Applications` or the user's folders (see *Update* below).
 
 Scenario names may be given as file stem, with or without the number prefix (`start-collection`, `01-start-collection`).
+A scenario given as a path (`scripts/e2e.sh --no-build Tests/E2E/bench/soak-ui.json`) runs outside `scenarios/`. Measurements: `E2E_FIXTURE_SECONDS=60` makes the fixture tracks 60 s long; a step with `"log": true` prints its reply as `[log] HH:MM:SS …` on stdout.
 
 Output: one row per scenario, `PASS` / `FAIL`, step count, duration, and on failure the first failing step with
 the expected and the received value. Exit code 0 only if all pass.
@@ -118,7 +119,8 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `set-prefs` | JSON object, deep-merged into the app's preferences (same as `scripts/pairdebug.sh prefs-set`) | the merged preferences |
 | `prefs-get` | – | the preferences |
 | `status` | – | recent status messages |
-| `ui-stats` | optional `reset` (true: count from now on) | `{ticks, over16, over50, maxMs}`: main-thread gaps between two 120 Hz ticks (> 16 ms, > 50 ms), longest gap (ms) |
+| `ui-stats` | optional `reset` (true: the count up to now is returned, then counting restarts) | `{ticks, over16, over50, maxMs, pid}`: main-thread gaps between two 120 Hz ticks (> 16 ms, > 50 ms), longest gap (ms). Every gap over 50 ms is also written to the status log (`status-log.txt`, info level, "Hänger Hauptthread N ms") |
+| `link` | optional `on` (true/false; absent: toggle) | `{linkEnabled}` (state before the change is applied on the next tick) |
 | `analyze` | `keys` (list), `timeout` (s, default 180) | `{results: [{key, bpm, musicalKey}]}` once all are analysed (`bpm`/`musicalKey` null if not stored); `{fehler}` after the timeout |
 | `add-to-playlist` | `playlist` (name of an own playlist; created if missing), `keys` | `{playlist, keys}` |
 | `collection-playlist-add` | `playlist` (name of a playlist of the collection file), `keys` | `{playlist, keys}`: the tracks go to the end of that playlist in `collection.nml` (backup first, needs `ui.writeCollection`, refused while the collection software runs); the write runs after the reply, so check the file with `file-check` after a `sleep` |

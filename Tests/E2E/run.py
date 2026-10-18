@@ -515,6 +515,9 @@ class Scenario:
             if value is MISSING:
                 raise Fail(f"{label}: save {name}: {path} fehlt")
             self.vars[name] = value
+        if step.get("log"):
+            # Messung: die Antwort mit Zeitpunkt ausgeben (Ausgabe des Laufs, nicht des Szenarios)
+            print(f"[log] {time.strftime('%H:%M:%S')} {label}: {json.dumps(reply.get('body'), ensure_ascii=False)}", flush=True)
         self.last_reply = reply
 
     def file_step(self, index, who, step):

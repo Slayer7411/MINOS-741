@@ -37,12 +37,22 @@ public enum CollectionWriter {
         public var playlistsEdited: [String] = []
         /// Größe + Änderungszeit der Datei nach dem Schreiben
         public var stamp: FileStamp?
+        /// nicht kritische Fehler (z. B. alte Sicherung nicht gelöscht), gehen in die Statuszeile
+        public var warnings: [String] = []
     }
 
     public enum Failure: Error, CustomStringConvertible {
         case invalidResult(String)
+        /// andere Schreibung hält die Sperre (Wartezeit abgelaufen)
+        case locked(String)
+        /// Schritt (Schreiben, Sichern, Synchronisieren …) fehlgeschlagen: Schritt, Ursache
+        case io(String, String)
         public var description: String {
-            switch self { case let .invalidResult(s): "Ergebnis ungültig, Datei nicht geschrieben: \(s)" }
+            switch self {
+            case let .invalidResult(s): "Ergebnis ungültig, Datei nicht geschrieben: \(s)"
+            case let .locked(p): "Collection-Datei gesperrt, anderer Schreibvorgang läuft (\(p))"
+            case let .io(step, why): "Collection-Datei nicht geschrieben (\(step)): \(why)"
+            }
         }
     }
 
@@ -308,15 +318,84 @@ public enum CollectionWriter {
         try write(url: url, job: Job(changes: changes, analyses: analyses), index: index, backupDir: backupDir, now: now)
     }
 
-    /// Temp-Datei im selben Ordner schreiben, dann per rename über das Original (atomar, nie halb geschrieben)
-    static func replaceAtomically(_ url: URL, with data: Data) throws {
-        let tmp = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).minos741-\(UUID().uuidString.prefix(8))")
-        try data.write(to: tmp)
-        if rename(tmp.path, url.path) != 0 {
-            let err = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-            try? FileManager.default.removeItem(at: tmp)
-            throw err
+    static func ioError(_ step: String, _ path: String) -> Failure {
+        .io(step, "\(path): \(String(cString: strerror(errno)))")
+    }
+
+    /// Temp-Datei im selben Ordner schreiben, dann per rename über das Original (atomar, nie halb geschrieben).
+    /// Reihenfolge: Daten -> Rechte des Originals -> F_FULLFSYNC (Fallback fsync) -> close -> rename -> fsync(Ordner).
+    /// Ohne fsync kann der rename nach einem Absturz auf der Platte stehen, bevor die Daten dort sind (leere Datei).
+    /// `trace` (Tests): bekommt jeden Schritt in der Reihenfolge, in der er läuft
+    static func replaceAtomically(_ url: URL, with data: Data, trace: ((String) -> Void)? = nil) throws {
+        let path = url.path
+        let dir = url.deletingLastPathComponent()
+        let tmp = dir.appendingPathComponent(".\(url.lastPathComponent).minos741-\(UUID().uuidString.prefix(8))").path
+        var mode: mode_t = 0o644
+        var st = stat()
+        if stat(path, &st) == 0 { mode = st.st_mode & 0o7777 } else if errno != ENOENT { throw ioError("Rechte lesen", path) }
+        let fd = Darwin.open(tmp, O_WRONLY | O_CREAT | O_EXCL, mode)
+        guard fd >= 0 else { throw ioError("Temp-Datei anlegen", tmp) }
+        var closed = false
+        func fail(_ error: Error) -> Error {
+            if !closed { _ = Darwin.close(fd) }
+            _ = Darwin.unlink(tmp)
+            return error
         }
+        do {
+            try data.withUnsafeBytes { buf in
+                guard let base = buf.baseAddress else { return }
+                var off = 0
+                while off < buf.count {
+                    let n = Darwin.write(fd, base + off, buf.count - off)
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        throw ioError("Temp-Datei schreiben", tmp)
+                    }
+                    off += n
+                }
+            }
+            trace?("write")
+            guard Darwin.fchmod(fd, mode) == 0 else { throw ioError("Rechte setzen", tmp) }
+            trace?("fullfsync")
+            if Darwin.fcntl(fd, F_FULLFSYNC) != 0 {
+                // Dateisystem ohne F_FULLFSYNC (z. B. Netz-Laufwerk): normales fsync
+                trace?("fsync")
+                guard Darwin.fsync(fd) == 0 else { throw ioError("fsync", tmp) }
+            }
+            closed = true
+            trace?("close")
+            guard Darwin.close(fd) == 0 else { throw ioError("Temp-Datei schließen", tmp) }
+            trace?("rename")
+            guard Darwin.rename(tmp, path) == 0 else { throw ioError("Umbenennen", path) }
+        } catch {
+            throw fail(error)
+        }
+        // Der rename steht jetzt im Ordner: auch den Ordner auf die Platte. Scheitert das, ist die Datei schon ersetzt
+        let dfd = Darwin.open(dir.path, O_RDONLY)
+        guard dfd >= 0 else { throw Failure.io("Ordner öffnen (Datei ist ersetzt)", dir.path) }
+        defer { _ = Darwin.close(dfd) }
+        trace?("dirsync")
+        guard Darwin.fsync(dfd) == 0 else { throw ioError("Ordner synchronisieren (Datei ist ersetzt)", dir.path) }
+    }
+
+    /// Exklusive Sperre (flock) auf die Sperrdatei neben der Collection, `timeout` Sekunden lang versucht.
+    /// Die Sperrdatei ist nicht die .nml selbst: die andere DJ-Software muss die Collection öffnen können.
+    /// Wirkt nur gegen andere Prozesse auf diesem Mac, die ebenfalls sperren
+    static func withLock<T>(_ url: URL, timeout: TimeInterval = 5, _ body: () throws -> T) throws -> T {
+        let path = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent).minos-lock").path
+        // O_EXLOCK = flock(LOCK_EX) beim Öffnen; O_NONBLOCK: bei Sperre sofort EWOULDBLOCK, dann erneut versuchen
+        let deadline = Date().addingTimeInterval(timeout)
+        var fd: Int32
+        while true {
+            fd = Darwin.open(path, O_RDWR | O_CREAT | O_EXLOCK | O_NONBLOCK, 0o644)
+            if fd >= 0 { break }
+            let err = errno
+            guard err == EWOULDBLOCK || err == EINTR else { throw Failure.io("Sperrdatei öffnen", "\(path): \(String(cString: strerror(err)))") }
+            guard Date() < deadline else { throw Failure.locked(path) }
+            usleep(20_000)
+        }
+        defer { _ = Darwin.close(fd) }
+        return try body()
     }
 
     /// so viele Sicherungen bleiben, ältere fallen weg
@@ -324,22 +403,33 @@ public enum CollectionWriter {
 
     /// Sicherung `collection_JJJJ-MM-TT_HHMMSS.nml` in `dir`; nil, wenn die letzte jünger als `minInterval` ist.
     /// Danach nur die neuesten `keepBackups`
-    public static func backup(_ url: URL, into dir: URL, now: Date, minInterval: TimeInterval = 3600) throws -> URL? {
+    /// `warnings`: Fehler beim Aufräumen alter Sicherungen (die neue Sicherung steht dann trotzdem)
+    public static func backup(_ url: URL, into dir: URL, now: Date, minInterval: TimeInterval = 3600,
+                              warnings: ((String) -> Void)? = nil) throws -> URL? {
         let fm = FileManager.default
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         let f = backupFormatter
-        let newest = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
+        let listing: () throws -> [String] = {
+            do { return try fm.contentsOfDirectory(atPath: dir.path) } catch { throw Failure.io("Sicherungsordner lesen", "\(dir.path): \(error.localizedDescription)") }
+        }
+        let newest = try listing()
             .filter { $0.hasPrefix("collection_") && $0.hasSuffix(".nml") }
             .compactMap { f.date(from: String($0.dropFirst("collection_".count).dropLast(4))) }
             .max()
         if let newest, now.timeIntervalSince(newest) < minInterval { return nil }
         let target = dir.appendingPathComponent("collection_\(f.string(from: now)).nml")
         guard !fm.fileExists(atPath: target.path) else { return nil }
-        try fm.copyItem(at: url, to: target)
-        let all = ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? [])
-            .filter { $0.hasPrefix("collection_") && $0.hasSuffix(".nml") && f.date(from: String($0.dropFirst("collection_".count).dropLast(4))) != nil }
+        do { try fm.copyItem(at: url, to: target) } catch { throw Failure.io("Sicherung kopieren", "\(target.path): \(error.localizedDescription)") }
+        let all: [String]
+        do { all = try listing() } catch { warnings?("Alte Sicherungen nicht aufgeräumt: \(error)"); return target }
+        for old in all
+            .filter({ $0.hasPrefix("collection_") && $0.hasSuffix(".nml") && f.date(from: String($0.dropFirst("collection_".count).dropLast(4))) != nil })
             .sorted()
-        for old in all.dropLast(keepBackups) { try? fm.removeItem(at: dir.appendingPathComponent(old)) }
+            .dropLast(keepBackups) {
+            do { try fm.removeItem(at: dir.appendingPathComponent(old)) } catch {
+                warnings?("Alte Sicherung \(old) nicht gelöscht: \(error.localizedDescription)")
+            }
+        }
         return target
     }
 

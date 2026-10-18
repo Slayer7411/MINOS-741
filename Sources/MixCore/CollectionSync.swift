@@ -519,10 +519,19 @@ extension CollectionWriter {
 
     /// alle Teile eines Schreibvorgangs: ENTRY-Blöcke (Metadaten, Analyse, Cues, Ort) textgenau ersetzen, neue
     /// Einträge vor `</COLLECTION>` (ENTRIES mitgezählt), eigener Playlist-Ordner. Ergebnis prüfen (lesbar, Anzahl
-    /// Tracks + neue, geschriebene Cues wieder lesbar), Sicherung, atomar ersetzen
+    /// Tracks + neue, geschriebene Cues wieder lesbar), Sicherung, atomar ersetzen. Gesamt unter der Sperre
+    /// (`withLock`), damit zwei MINOS-Schreibvorgänge nicht zwischen Lesen und Ersetzen ineinanderlaufen
     public static func write(url: URL, job: Job, index: NMLEntryIndex, backupDir: URL?, now: Date = Date()) throws -> Result {
+        try withLock(url) { try writeLocked(url: url, job: job, index: index, backupDir: backupDir, now: now) }
+    }
+
+    /// Wie `write`, aber ohne Sperre. `beforeReplace` (Tests): läuft nach dem Lesen und Prüfen, vor dem Ersetzen,
+    /// so wie eine andere Software die Datei zwischendurch speichern kann
+    static func writeLocked(url: URL, job: Job, index: NMLEntryIndex, backupDir: URL?, now: Date = Date(),
+                            beforeReplace: (() -> Void)? = nil) throws -> Result {
         guard writeAllowed(url) else { throw Refusal.protected(url.path) }
         if let exp = job.expected, FileStamp(url: url) != exp { throw Refusal.changedOnDisk }
+        let readStamp = FileStamp(url: url)
         let data = try Data(contentsOf: url)
         var bytes = [UInt8](data)
         var res = Result()
@@ -622,7 +631,11 @@ extension CollectionWriter {
         guard bytes != [UInt8](data) else { return res }
         let out = Data(bytes)
         try validate(before: data, after: out, job: job, result: res)
-        if let backupDir { res.backup = try backup(url, into: backupDir, now: now, minInterval: 0) }
+        if let backupDir { res.backup = try backup(url, into: backupDir, now: now, minInterval: 0, warnings: { res.warnings.append($0) }) }
+        beforeReplace?()
+        // Letzte Prüfung: hat die andere Software die Datei seit dem Lesen gespeichert, nicht überschreiben.
+        // Die Anwendung lädt dann neu und wendet ihre Änderungen erneut an (`writeAfterLoad`)
+        if FileStamp(url: url) != readStamp { throw Refusal.changedOnDisk }
         try replaceAtomically(url, with: out)
         res.changed = true
         res.stamp = FileStamp(url: url)
@@ -713,7 +726,10 @@ public enum ConflictBackup {
     public static func save<T: Codable>(_ items: [String: T], to url: URL) throws {
         guard !items.isEmpty else { return }
         var all: [String: T] = [:]
-        if let d = try? Data(contentsOf: url), let old = try? JSONDecoder().decode([String: T].self, from: d) { all = old }
+        // vorhandene Sicherung muss lesbar sein: sonst würde sie stillschweigend überschrieben
+        if FileManager.default.fileExists(atPath: url.path) {
+            all = try JSONDecoder().decode([String: T].self, from: Data(contentsOf: url))
+        }
         all.merge(items) { _, new in new }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         let enc = JSONEncoder()

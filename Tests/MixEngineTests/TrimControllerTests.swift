@@ -113,9 +113,9 @@ private func near(_ a: Double, _ b: Double) -> Bool { abs(a - b) < 1e-6 }
         c.tapGrid(0, at: t)
         #expect(c.snapshot().decks[0].gridEdited == (i == 3))
     }
-    #expect(abs(c.snapshot().decks[0].grid!.bpm - 127.66) < 0.01)
+    #expect(abs(try #require(c.snapshot().decks[0].grid).bpm - 127.66) < 0.01)
     c.tapGrid(0, at: 110)                 // Pause > 2 s: beginnt neu, ändert nichts
-    #expect(abs(c.snapshot().decks[0].grid!.bpm - 127.66) < 0.01)
+    #expect(abs(try #require(c.snapshot().decks[0].grid).bpm - 127.66) < 0.01)
 }
 
 @Test func loopFromRangeJumpsInAndKeepsTrim() async throws {

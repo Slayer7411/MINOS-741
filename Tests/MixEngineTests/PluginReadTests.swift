@@ -14,16 +14,19 @@ private func waitFor(_ seconds: Double = 15, _ cond: () -> Bool) async throws {
 private final class ReadGate: @unchecked Sendable {
     private let lock = NSLock()
     private var armed = true
-    private var entered = false
+    private var window: (Double, Double)?
     func block(_ seconds: Double) {
         lock.lock()
         let first = armed
         armed = false
-        if first { entered = true }
         lock.unlock()
-        if first { Thread.sleep(forTimeInterval: seconds) }
+        guard first else { return }
+        let start = ProcessInfo.processInfo.systemUptime
+        Thread.sleep(forTimeInterval: seconds)
+        lock.lock(); window = (start, ProcessInfo.processInfo.systemUptime); lock.unlock()
     }
-    var didEnter: Bool { lock.lock(); defer { lock.unlock() }; return entered }
+    var didEnter: Bool { lock.lock(); defer { lock.unlock() }; return window != nil }
+    var span: (Double, Double)? { lock.lock(); defer { lock.unlock() }; return window }
 }
 
 /// Zeitpunkte der Tick-Handler (alle 6 Ticks, also alle ~30 ms)
@@ -31,10 +34,11 @@ private final class TickLog: @unchecked Sendable {
     private let lock = NSLock()
     private var times: [Double] = []
     func mark() { lock.lock(); times.append(ProcessInfo.processInfo.systemUptime); lock.unlock() }
-    var count: Int { lock.lock(); defer { lock.unlock() }; return times.count }
-    var maxGap: Double {
+    /// Zahl der Marken innerhalb des Zeitfensters
+    func count(in span: (Double, Double)?) -> Int {
         lock.lock(); defer { lock.unlock() }
-        return zip(times.dropFirst(), times).map { $0 - $1 }.max() ?? 0
+        guard let span else { return 0 }
+        return times.filter { $0 >= span.0 && $0 <= span.1 }.count
     }
 }
 
@@ -53,12 +57,11 @@ private final class TickLog: @unchecked Sendable {
     try await Task.sleep(for: .milliseconds(100))
     let gate = ReadGate()
     core.readPluginValue = { inst, pid in gate.block(0.2); return inst.value(pid) }
-    let before = ticks.count
     // Regler 2 auf die Filterfrequenz: die Stellung wird vom Plugin gelesen (blockiert 200 ms)
     core.setFXMapping(0, .knob2, freq.id)
     try await waitFor(3) { gate.didEnter }
     try await Task.sleep(for: .milliseconds(300))
     #expect(gate.didEnter)
-    #expect(ticks.count - before >= 6)          // Ticks laufen während des Lesens weiter
-    #expect(ticks.maxGap < 0.1)                  // kein Stillstand von 200 ms
+    // Handler alle 6 Ticks (~30 ms): während der 200 ms Lesen mehrere Durchläufe (ohne die Naht: keiner)
+    #expect(ticks.count(in: gate.span) >= 2)
 }

@@ -1,4 +1,5 @@
 import AppKit
+import ObjectiveC
 import Testing
 import MixCore
 @testable import MixApp
@@ -55,4 +56,26 @@ import MixCore
     #expect(k.sortMark == "▼2" && k.font11.pointSize == 13)
     c.sortMark = ""
     #expect(c.sortMark.isEmpty && k.sortMark == "▼2")
+}
+
+/// AppKit kopiert NSCell bitweise: eine Swift-Eigenschaft der Unterklasse hätte keine eigene Freigabe (Absturz in drawInterior).
+/// Die Unterklasse darf deshalb keine gespeicherten Eigenschaften haben
+@Test @MainActor func headerCellAddsNoStoredProperties() {
+    #expect(class_getInstanceSize(TrackHeaderCell.self) == class_getInstanceSize(NSTableHeaderCell.self))
+}
+
+/// Absturzpfad: Kopie der Header-Zelle (Spalte wird gezogen), Quelle wird freigegeben, Kopie wird gezeichnet
+@Test @MainActor func headerCellCopyDrawsAfterSourceIsGone() {
+    var src: TrackHeaderCell? = TrackHeaderCell(textCell: "Artist")
+    src?.sortMark = "▼2"
+    src?.font11 = TableStyle.mono(13)
+    let k = src!.copy() as! TrackHeaderCell
+    src = nil
+    let img = NSImage(size: NSSize(width: 200, height: 20))
+    for _ in 0..<50 {
+        img.lockFocus()
+        k.draw(withFrame: NSRect(x: 0, y: 0, width: 200, height: 20), in: NSView())
+        img.unlockFocus()
+    }
+    #expect(k.sortMark == "▼2" && k.font11.pointSize == 13)
 }

@@ -268,7 +268,7 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("minos-chain-\(UUID().uuidString.prefix(8))")
     try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
-    let core = MixController()
+    let core = testController()
     core.pluginCatalog = PluginCatalog(directory: dir.appendingPathComponent("store"), folders: [], vst3Folders: [])
     core.setSlots(1, [])
     core.addSlot(1, id: "aufx:lpas:appl")
@@ -352,7 +352,7 @@ private func waitFor(_ seconds: Double = 20, _ cond: () -> Bool) async throws {
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: dir) }
     try FileManager.default.copyItem(at: src, to: folder.appendingPathComponent(src.lastPathComponent))
-    let core = MixController()
+    let core = testController()
     let cat = PluginCatalog(directory: dir.appendingPathComponent("store"), folders: [], vst3Folders: [])
     cat.update { $0.folders = [folder.path]; $0.allowInProcess = true }
     core.pluginCatalog = cat

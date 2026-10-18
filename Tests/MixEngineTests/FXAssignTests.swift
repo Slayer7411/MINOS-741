@@ -29,7 +29,7 @@ private let group = "FILTER > DELAY > REVERB"
 
 /// Vorlage Gruppe = früherer Gruppenmodus; ein Slot = früherer Single-Modus
 @Test func fxDefaultMappingKeepsOldLayout() {
-    let core = MixController()
+    let core = testController()
     var s = core.snapshot()
     #expect(s.fx[0].effectKey == group)
     #expect(s.fxControls[0].map(\.label) == ["D/W", "FILTER", "DELAY", "REVERB", "ON", "ON", "ON"])
@@ -62,7 +62,7 @@ private let group = "FILTER > DELAY > REVERB"
 }
 
 @Test func fxMappingRemapsAndIsRememberedPerRack() {
-    let core = MixController()
+    let core = testController()
     core.setFXMapping(0, .knob1, "s2.size")
     core.setFXMapping(0, .knob2, "")
     core.setFXMapping(0, .button2, "s1.rate")
@@ -105,7 +105,7 @@ private let group = "FILTER > DELAY > REVERB"
     m[.button1] = ""
     prefs.fxMappings["GROUP"] = m
     prefs = try JSONDecoder().decode(EnginePrefs.self, from: JSONEncoder().encode(prefs))
-    let core = MixController()
+    let core = testController()
     core.setPrefs(prefs)
     var s = core.snapshot()
     #expect(s.prefs.fxMappings["GROUP"] == nil && s.prefs.fxMappings[group]?[.knob3] == "s2.size")
@@ -138,7 +138,7 @@ private let group = "FILTER > DELAY > REVERB"
 @Test func fxMappingDrivesAudioUnitParameterTree() async throws {
     let dir = try tempDir()
     defer { try? FileManager.default.removeItem(at: dir) }
-    let core = MixController()
+    let core = testController()
     core.pluginCatalog = catalog(dir)
     let id = "aufx:mrev:appl"
     core.setSlots(0, [FXSlot(id: id)])
@@ -182,7 +182,7 @@ private let group = "FILTER > DELAY > REVERB"
     try FileManager.default.copyItem(at: src, to: folder.appendingPathComponent(src.lastPathComponent))
     let id = "vst3:C18D3C1E719E4E29924D3ECAA5E4DA18"
 
-    let core = MixController()
+    let core = testController()
     core.pluginCatalog = catalog(dir, vst3: folder)
     core.setSlots(0, [FXSlot(id: id)])
     try await waitFor { core.snapshot().fxParams[0].contains { $0.pluginParam != nil } }
@@ -220,7 +220,7 @@ private let group = "FILTER > DELAY > REVERB"
     core.replaceSlot(0, slot: 0, id: "REVERB")
     #expect(core.snapshot().fx[0].mappingKey == "REVERB" && core.snapshot().fx[0].mapping.isEmpty)
     core.setSlots(0, [])
-    let next = MixController()
+    let next = testController()
     next.pluginCatalog = catalog(dir, vst3: folder)
     next.setPrefs(prefs)
     let fx = try JSONDecoder().decode(FXUnitState.self, from: session)
@@ -238,7 +238,7 @@ private let group = "FILTER > DELAY > REVERB"
 
 /// ein Slot REVERB: Taste 2 = Freeze (FRZ), Gruppe: Freeze zuweisbar; Freeze kommt nicht aus der Sitzung zurück
 @Test func fxReverbFreezeButton() throws {
-    let core = MixController()
+    let core = testController()
     core.setSlots(1, [FXSlot(id: "REVERB")])
     var s = core.snapshot()
     #expect(s.fxControls[1].map(\.label) == ["D/W", "SIZE", "HP", "LP", "ON", "FRZ", "—"])
@@ -255,7 +255,7 @@ private let group = "FILTER > DELAY > REVERB"
 
 /// Beat-FX als einziger Slot: Standardbelegung, Stufen, Flanger frei = Regler 1 auf Hz; Freeze/Mute nicht aus der Sitzung
 @Test func fxBeatEffectsSingleMapping() throws {
-    let core = MixController()
+    let core = testController()
     func single(_ e: FXUnitState.Effect) -> MixState { core.replaceSlot(1, slot: 0, id: e.name); return core.snapshot() }
     core.setSlots(1, [FXSlot(id: "DELAY")])
     var s = single(.gater)
@@ -292,7 +292,7 @@ private let group = "FILTER > DELAY > REVERB"
 
 /// Mode-Taste: alle Slots aus (gemerkt, welche an waren), wieder an
 @Test func fxModeButtonRemembersSlots() {
-    let core = MixController()
+    let core = testController()
     core.updateFX(0) { $0.slots[0].on = true; $0.slots[2].on = true }
     core.fxModeButton(0, shift: false)
     #expect(core.snapshot().fx[0].slots.map(\.on) == [false, false, false])
@@ -306,7 +306,7 @@ private let group = "FILTER > DELAY > REVERB"
 
 /// Slots: eingebaute je einmal (Wahl eines schon belegten tauscht die Plätze), höchstens slotCount, Gruppen-Belegung je Slot
 @Test func fxSlotsRulesAndGroupLayout() throws {
-    let core = MixController()
+    let core = testController()
     core.replaceSlot(0, slot: 0, id: "GATER")
     core.replaceSlot(0, slot: 2, id: "ROLL")
     var s = core.snapshot()

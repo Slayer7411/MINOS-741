@@ -9,7 +9,7 @@ import MixEngine
     var t = Track(key: url.path, path: url.path)
     t.bpm = 120
     t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)]
-    let c = MixController()
+    let c = testController()
     c.load(t, deck: 0)
     for _ in 0..<250 where c.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
     #expect(c.trackAudio(0) != nil)

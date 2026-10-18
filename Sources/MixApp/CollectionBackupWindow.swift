@@ -33,7 +33,7 @@ enum CollectionRestore {
             switch error as? CollectionBackups.Failure {
             case let .invalid(why)?: msg = String(localized: "Sicherung nicht wiederhergestellt: \(why)")
             case .previousNotBacked?: msg = String(localized: "Nicht wiederhergestellt: der bisherige Stand konnte nicht gesichert werden")
-            case nil: msg = String(localized: "Nicht wiederhergestellt: \(error.localizedDescription)")
+            case nil: msg = String(localized: "Nicht wiederhergestellt: \(String(describing: error))")
             }
             StatusCenter.post(.error, msg, key: "backup.restore")
             return Outcome(ok: false, message: msg, tracks: nil)

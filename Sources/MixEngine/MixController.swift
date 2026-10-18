@@ -1982,14 +1982,25 @@ public final class MixController: @unchecked Sendable {
         if out != state.fxControls[u] { state.fxControls[u] = out }
     }
 
-    /// Stellung eines Ziels: eigener Wert, Plugin = zuletzt gesetzter Wert, sonst vom Plugin gelesen (und gemerkt)
+    /// Stellung eines Ziels: eigener Wert, Plugin = zuletzt gesetzter Wert. Noch nicht gelesen: Standard zeigen und das
+    /// Plugin außerhalb der Sperre fragen (AU out of process: IPC); die Stellung kommt zurück und ersetzt den Standard
     private func fxValue(_ u: Int, _ p: FXParam) -> Double {
         guard let pid = p.pluginParam else { return FXCatalog.value(p.id, state.fx[u], prefs: state.prefs) ?? 0 }
         if let v = state.fx[u].pluginValues[p.id] { return v }
         guard let inst = slotInsts(u, p.pluginSlot)?.first else { return p.defaultValue }
-        let v = p.position(Double(inst.value(pid)))
-        state.fx[u].pluginValues[p.id] = v
-        return v
+        let key = "\(u)|\(p.id)"
+        if pendingValueReads.insert(key).inserted {
+            pluginReads.async { [self] in
+                let v = p.position(Double(inst.value(pid)))
+                locked {
+                    pendingValueReads.remove(key)
+                    guard state.fx[u].pluginValues[p.id] == nil, slotInsts(u, p.pluginSlot)?.first === inst else { return }
+                    state.fx[u].pluginValues[p.id] = v
+                    refreshControls(u)
+                }
+            }
+        }
+        return p.defaultValue
     }
 
     // MARK: Slots und Plugins
@@ -2021,6 +2032,9 @@ public final class MixController: @unchecked Sendable {
     private var installedKinds = [[Int32]?](repeating: nil, count: busCount)
     private let pluginQueue = DispatchQueue(label: "minos741.plugins", qos: .userInitiated)
     private let pluginEvents = DispatchQueue(label: "minos741.plugin-events", qos: .userInitiated)
+    /// Stellungen, die noch vom Plugin gelesen werden (Schlüssel: Unit|Ziel); Lesen nie unter der Sperre
+    private let pluginReads = DispatchQueue(label: "minos741.plugin-reads", qos: .userInitiated)
+    private var pendingValueReads = Set<String>()
     /// Plugin-Liste, Einstellungen, Absturz-Markierung (die App setzt vor dem ersten Laden eine gespeicherte ein)
     public var pluginCatalog = PluginCatalog(directory: nil) {
         didSet { observeInvalidation() }
@@ -2224,14 +2238,13 @@ public final class MixController: @unchecked Sendable {
 
     /// Instanz für das Plugin-Fenster (die des ersten Decks); Änderungen darin gehen live an die anderen Decks des Slots
     public func beginPluginEdit(_ b: Int, slot k: Int = 0) -> PluginInstance? {
-        locked {
-            guard let first = slotInsts(b, k)?.first else { return nil }
-            first.observe(on: pluginEvents) { [weak self, weak first] id, v in
-                guard let self, let first else { return }
-                self.pluginParamChanged(b, first, id, v)
-            }
-            return first
+        guard let first = locked({ slotInsts(b, k)?.first }) else { return nil }
+        // Zuhörer beim Plugin anmelden (AU: pro Parameter ein Aufruf an den Dienst) – außerhalb der Sperre
+        first.observe(on: pluginEvents) { [weak self, weak first] id, v in
+            guard let self, let first else { return }
+            self.pluginParamChanged(b, first, id, v)
         }
+        return first
     }
 
     /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken (VST3: Zustand auf dem UI-Thread, außerhalb der Sperre)
@@ -2245,11 +2258,14 @@ public final class MixController: @unchecked Sendable {
     }
 
     private func pluginParamChanged(_ b: Int, _ src: PluginInstance, _ id: AudioUnitParameterID, _ v: Float) {
+        // die anderen Instanzen des Slots nachziehen: Plugin-Aufrufe außerhalb der Sperre (auf der Ereignis-Queue)
+        let others = locked { () -> [PluginInstance] in
+            guard let k = slots(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === src } == true }) else { return [] }
+            return slotInsts(b, k)?.filter { $0 !== src } ?? []
+        }
+        for p in others where p.value(id) != v { p.set(id, v) }
         locked {
-            guard let k = slots(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === src } == true }),
-                  let insts = slotInsts(b, k) else { return }
-            for p in insts where p !== src && p.value(id) != v { p.set(id, v) }
-            guard b < Self.masterBus else { return }
+            guard b < Self.masterBus, let k = slots(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === src } == true }) else { return }
             // Bedienelemente folgen dem Fenster; gemerkte Stellungen bleiben aktuell
             let key = FXParam.pluginKey(id, slot: k)
             guard state.fx[b].pluginValues[key] != nil || state.fxControls[b].contains(where: { $0.param?.id == key }),

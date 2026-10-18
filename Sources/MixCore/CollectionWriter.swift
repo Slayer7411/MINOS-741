@@ -33,6 +33,8 @@ public enum CollectionWriter {
         public var playlists: [NMLOwnNode]?
         /// eigener Playlist-Ordner hat sich geändert
         public var playlistsChanged = false
+        /// UUIDs der Collection-Playlists, deren Einträge jetzt in der neuen Reihenfolge stehen
+        public var playlistsEdited: [String] = []
         /// Größe + Änderungszeit der Datei nach dem Schreiben
         public var stamp: FileStamp?
     }

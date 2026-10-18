@@ -2189,3 +2189,11 @@
 "Der Datenordner liegt neben der Collection; Einstellungen und Verlauf bleiben dort." = "The data folder sits next to the collection; settings and history stay there.";
 "Ohne Automatik meldet MINOS-741 nur ein Update in der Statusleiste." = "Without automation MINOS-741 only reports an update in the status bar.";
 "misst je puffergröße (64 bis 1024), dann die empfehlung. lädt 4 tracks, hauptausgang stumm." = "measures each buffer size (64 to 1024), then the recommendation. loads 4 tracks, main output muted.";
+"Als eigene Playlist übernehmen" = "Take over as own playlist";
+"Bearbeiten … (als eigene Kopie)" = "Edit … (as own copy)";
+"Ordner der Collection (nur lesen)" = "Collection folder (read only)";
+"Playlist der Collection · Tracks hierher ziehen (wird in die Collection-Datei geschrieben)" = "Collection playlist · drag tracks here (written to the collection file)";
+"Smartlist der Collection · Regel: %@" = "Collection smartlist · rule: %@";
+"Smartlist – Tracks kommen über die Regel (Rechtsklick → Bearbeiten …)" = "Smartlist – tracks come from the rule (right-click → Edit …)";
+"Playlist „%@“ nicht geändert: Schreiben in die Collection ist aus. Einstellungen → Collection → „Änderungen in die Collection-Datei schreiben“ einschalten." = "Playlist “%@” not changed: writing to the collection is off. Settings → Collection → turn on “Write changes to the collection file”.";
+"Playlist in der Collection nicht gefunden (Baum neu laden)" = "Playlist not found in the collection (reload the tree)";

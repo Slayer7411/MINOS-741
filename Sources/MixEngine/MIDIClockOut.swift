@@ -150,7 +150,9 @@ public final class MIDIClockOut: @unchecked Sendable {
         for e in events {
             let secs = (e.beat - c.beat) * spb + offsetSeconds
             let host = secs >= 0 ? c.hostTime &+ LinkSession.hostTicks(seconds: secs) : c.hostTime &- LinkSession.hostTicks(seconds: -secs)
-            out.append((max(host, now), e.beat, e.message.bytes))
+            // Zeitstempel bleiben auf dem Raster, auch wenn die Queue spät dran ist: Vergangenes sendet CoreMIDI sofort,
+            // ein auf „jetzt“ gesetzter Stempel würde den Takt dagegen aus dem Raster ziehen
+            out.append((host, e.beat, e.message.bytes))
         }
         send(out)
     }

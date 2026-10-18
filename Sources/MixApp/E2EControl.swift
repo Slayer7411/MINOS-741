@@ -140,6 +140,12 @@ final class E2EControl {
             let r = PairDebugResponder.answer(command: "prefs-set", args: req.args, mix: mix, allowed: true)
             done(r.ok, parsedBody(r.body))
 
+        case "ui-stats":
+            // Lücken des Hauptthreads (MainStall); "reset": true zählt ab jetzt neu
+            if a["reset"] as? Bool == true { MainStall.reset() }
+            let s = MainStall.stats
+            done(true, ["ticks": s.ticks, "over16": s.over16, "over50": s.over50, "maxMs": (s.maxMs * 10).rounded() / 10])
+
         case "prefs-get", "status":
             let r = PairDebugResponder.answer(command: req.command, args: "", mix: mix, allowed: true)
             done(r.ok, parsedBody(r.body))

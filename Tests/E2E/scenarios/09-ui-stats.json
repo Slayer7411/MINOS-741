@@ -1,0 +1,27 @@
+{
+  "name": "ui-stats",
+  "description": "Vier Decks mit Keylock und Sync spielen, Track-Wechsel und Suchen; Lücken des Hauptthreads (ui-stats) werden gezählt",
+  "instances": ["A"],
+  "steps": [
+    {"do": "select-source", "args": {"source": "collection"}},
+    {"do": "load", "args": {"deck": 0, "key": "${key:t01.wav}"}, "expect": [{"path": "body.accepted", "equals": true}]},
+    {"do": "load", "args": {"deck": 1, "key": "${key:t02.wav}"}, "expect": [{"path": "body.accepted", "equals": true}]},
+    {"do": "load", "args": {"deck": 2, "key": "${key:t03.wav}"}, "expect": [{"path": "body.accepted", "equals": true}]},
+    {"do": "load", "args": {"deck": 3, "key": "${key:t04.wav}"}, "expect": [{"path": "body.accepted", "equals": true}]},
+    {"do": "snapshot", "timeout": 30, "expect": [
+      {"path": "body.decks.3.path", "endswith": "t04.wav"}
+    ]},
+    {"do": "ui-stats", "args": {"reset": true}, "expect": [{"path": "body.ticks", "ge": 0}]},
+    {"do": "play", "args": {"deck": 0}, "retry": true, "expect": [{"path": "body.playing", "equals": true}]},
+    {"do": "play", "args": {"deck": 1}, "retry": true, "expect": [{"path": "body.playing", "equals": true}]},
+    {"do": "play", "args": {"deck": 2}, "retry": true, "expect": [{"path": "body.playing", "equals": true}]},
+    {"do": "play", "args": {"deck": 3}, "retry": true, "expect": [{"path": "body.playing", "equals": true}]},
+    {"do": "sleep", "seconds": 2.0},
+    {"do": "search", "args": {"pane": 0, "text": "t0"}, "expect": [{"path": "body.search", "equals": "t0"}]},
+    {"do": "sleep", "seconds": 2.0},
+    {"do": "ui-stats", "expect": [
+      {"path": "body.ticks", "gt": 100},
+      {"path": "body.maxMs", "gt": 0}
+    ]}
+  ]
+}

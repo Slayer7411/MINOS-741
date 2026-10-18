@@ -19,6 +19,8 @@ final class HistoryStore {
     /// zählt bei jeder Änderung der Gespielt-Markierungen hoch (Listen-Schlüssel beim Ausblenden)
     @ObservationIgnored private(set) var playedRevision = 0
     static let playedURL = baseDir.appendingPathComponent("played.json")
+    /// Serielle Warteschlange für played.json und die Archiv-Verzeichnisse (läuft bei jedem Track-Start, nicht auf dem Hauptthread)
+    nonisolated private static let ioQueue = DispatchQueue(label: "minos741.history-io", qos: .utility)
     /// eigene Änderung der Gespielt-Markierungen (hinzu, weg) – Zwei-Mac-Modus schickt sie zum anderen Mac
     @ObservationIgnored var onPlayedChange: ((_ add: Set<String>, _ remove: Set<String>) -> Void)?
     let sessionStart = Date()
@@ -54,7 +56,7 @@ final class HistoryStore {
     func finish() {
         updateDurations()
         save(sync: true)
-        savePlayed()
+        savePlayed(sync: true)
     }
 
     func start(store: LibraryStore, mix: MixModel) {
@@ -114,9 +116,14 @@ final class HistoryStore {
         savePlayed()
     }
 
-    private func savePlayed() {
+    /// played.json: Kopie auf dem Hauptthread, Kodieren und Schreiben in der seriellen Warteschlange (Reihenfolge bleibt)
+    private func savePlayed(sync: Bool = false) {
         guard !Session.isSelfTest else { return }
-        if let d = try? JSONEncoder().encode(played.sorted()) { try? d.write(to: Self.playedURL, options: .atomic) }
+        let list = played.sorted(), url = Self.playedURL
+        let write: @Sendable () -> Void = {
+            if let d = try? JSONEncoder().encode(list) { try? d.write(to: url, options: .atomic) }
+        }
+        if sync { Self.ioQueue.sync(execute: write) } else { Self.ioQueue.async(execute: write) }
     }
 
     func record(deck: Int, track t: Track, start: Date) {
@@ -124,7 +131,7 @@ final class HistoryStore {
         live.append(HistoryEntry(key: t.key, title: t.title, artist: t.artist, bpm: t.bpm, keyText: t.openKey,
                                  deck: deck, start: start, duration: mix?.core.playedSeconds(deck) ?? 0))
         save()
-        refreshArchive()
+        refreshArchiveInBackground()
     }
 
     private func updateDurations() {
@@ -154,16 +161,34 @@ final class HistoryStore {
     }
 
     func refreshArchive() {
+        let r = Self.scanArchive(live: liveURL, historyDir: Self.historyDir, externalDir: Self.externalHistoryDir, prepDir: Self.prepDir)
+        archive = r.archive
+        prepArchive = r.prep
+    }
+
+    /// wie `refreshArchive`, die Verzeichnisse lesen im Hintergrund (bei jedem Track-Start). Ergebnisse in Reihenfolge
+    private func refreshArchiveInBackground() {
+        let live = liveURL, hist = Self.historyDir, ext = Self.externalHistoryDir, prep = Self.prepDir
+        Self.ioQueue.async {
+            let r = Self.scanArchive(live: live, historyDir: hist, externalDir: ext, prepDir: prep)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self.archive = r.archive; self.prepArchive = r.prep }
+            }
+        }
+    }
+
+    /// Archiv und Preparation-Archiv aus den Ordnern (pur, auch im Hintergrund)
+    nonisolated static func scanArchive(live: URL, historyDir: URL, externalDir: URL, prepDir: URL)
+        -> (archive: [HistorySession], prep: [HistorySession]) {
         func list(_ dir: URL, _ src: HistorySession.Source) -> [HistorySession] {
             ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? [])
                 .filter { $0.pathExtension == "nml" }
                 .compactMap { u in HistorySession.date(fromFileName: u.lastPathComponent).map { HistorySession(url: u, date: $0, source: src) } }
         }
-        let own = list(Self.historyDir, .live).filter { $0.url != liveURL }
+        let own = list(historyDir, .live).filter { $0.url != live }
         let ownNames = Set(own.map(\.url.lastPathComponent))
-        let external = list(Self.externalHistoryDir, .external).filter { !ownNames.contains($0.url.lastPathComponent) }
-        archive = (own + external).sorted { $0.date > $1.date }
-        prepArchive = list(Self.prepDir, .live).sorted { $0.date > $1.date }
+        let external = list(externalDir, .external).filter { !ownNames.contains($0.url.lastPathComponent) }
+        return ((own + external).sorted { $0.date > $1.date }, list(prepDir, .live).sorted { $0.date > $1.date })
     }
 
     func entries(_ s: HistorySession) -> [HistoryEntry] {

@@ -19,6 +19,9 @@ codenames: every major version is named after a circle of hell (minos judges the
 ### changed
 * settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit on an ERWEITERT sub-page per tab (link at the bottom of each tab; search and deep links open it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
 
+### security
+* two macs: pairing with a code (`pair-code` in e2e; key derived from the code, HMAC handshake with nonces, frames sealed with ChaCha20-Poly1305, per-direction counters against replay). the key is kept in the Keychain per peer; unpaired peers are refused. remote debug is off by default. unit tests (handshake, wrong code, replay, tampering, key order), e2e scenario `pair-two-instances`
+
 ### fixed
 * updates: release downloads redirected to `release-assets.githubusercontent.com` were refused silently (check found nothing). redirect target allowed, https only. `Jetzt prüfen` shows every outcome with its reason; automatic failures go to the status log after the first one
 * fx golden test `fxPluginSlotBitIdenticalToOldChain` passes again: its hash was not updated with the glide snap (9f8fd46). the plugin slot output differs from the old chain only where the deck volume glide snaps to its target (from block 9, max 4.99e-5 relative); hash `0x6f8a07943193ddbf`

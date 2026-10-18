@@ -503,7 +503,7 @@ struct RecordPanel: View {
             RecordButton()
             RecordMeter(width: 52)
         }
-        .frame(width: 64.z, height: 42.z)
+        .frame(width: 64.z).frame(minHeight: 42.z, maxHeight: .infinity)
         .overlay(Rectangle().stroke(mix.recorder.recording ? Theme.bone : Theme.hairline, lineWidth: 1))
     }
 }

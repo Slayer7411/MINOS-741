@@ -118,6 +118,7 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `set-prefs` | JSON object, deep-merged into the app's preferences (same as `scripts/pairdebug.sh prefs-set`) | the merged preferences |
 | `prefs-get` | – | the preferences |
 | `status` | – | recent status messages |
+| `ui-stats` | optional `reset` (true: count from now on) | `{ticks, over16, over50, maxMs}`: main-thread gaps between two 120 Hz ticks (> 16 ms, > 50 ms), longest gap (ms) |
 | `analyze` | `keys` (list), `timeout` (s, default 180) | `{results: [{key, bpm, musicalKey}]}` once all are analysed (`bpm`/`musicalKey` null if not stored); `{fehler}` after the timeout |
 | `add-to-playlist` | `playlist` (name of an own playlist; created if missing), `keys` | `{playlist, keys}` |
 | `mark-played` | `keys` | `{played}` (count); propagates to the paired instance |

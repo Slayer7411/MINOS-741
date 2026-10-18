@@ -282,12 +282,15 @@ final class StatusLogFile: @unchecked Sendable {
         }
     }
 
-    static func stamp(_ date: Date) -> String {
+    /// einmal angelegt: jede Statusmeldung läuft über den Hauptthread, ein neuer DateFormatter kostet dort merklich
+    private static let stampFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        return f.string(from: date)
-    }
+        return f
+    }()
+
+    static func stamp(_ date: Date) -> String { stampFormatter.string(from: date) }
 
     private func ensureLoaded() {
         guard lines == nil else { return }

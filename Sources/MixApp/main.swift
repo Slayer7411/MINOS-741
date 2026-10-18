@@ -588,6 +588,7 @@ struct MixApp: App {
 extension MixApp {
     /// Controller auf der Steuer-Queue starten; Browser-Aktionen kommen auf dem Hauptthread zurück.
     @MainActor func startControllers() {
+        MainStall.start()   // Lücken des Hauptthreads zählen (E2E: ui-stats)
         browser.store = store
         browser.history = history
         browser.separators = { [mix] in mix.prefs.ui.tagSeparators }
@@ -609,7 +610,7 @@ extension MixApp {
             Session.saveNow(mix: mix, browser: browser)
             mix.flushEdits()
             history.finish()
-            SettingsFile.export()
+            SettingsFile.export(sync: true)
             CloudLibrary.shared.handOff()
         }
         let session = Session.load()

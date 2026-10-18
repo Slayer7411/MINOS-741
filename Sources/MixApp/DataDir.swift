@@ -85,18 +85,37 @@ enum SettingsFile {
         d.set(s, forKey: stampKey)
     }
 
-    /// alle geteilten Werte in die Datei (atomar)
-    static func export(_ d: UserDefaults = E2E.defaults) {
+    /// Serielle Warteschlange für Serialisieren, Vergleich und Schreiben (lief bei jeder Änderung auf dem Hauptthread)
+    private static let ioQueue = DispatchQueue(label: "minos741.settings-export", qos: .utility)
+
+    /// alle geteilten Werte in die Datei (atomar). Auf dem Hauptthread nur die Kopie der Einstellungen; Serialisieren,
+    /// Vergleich und Schreiben im Hintergrund. `sync`: beim Beenden, dann ist die Datei fertig, wenn es zurückkommt
+    static func export(_ d: UserDefaults = E2E.defaults, sync: Bool = false) {
         guard !Session.isSelfTest, let id = E2E.isActive ? E2E.suite : Bundle.main.bundleIdentifier,
               let dict = d.persistentDomain(forName: id) else { return }
         // alles in die Datei (auch das Audio-Gerät, zum Nachsehen); beim Übernehmen bleibt es lokal
-        let out = dict.filter { $0.key != stampKey }
-        guard !out.isEmpty, let data = try? PropertyListSerialization.data(fromPropertyList: out, format: .binary, options: 0) else { return }
-        // unverändert: nicht schreiben (Drive, Zeitstempel)
-        if let old = try? Data(contentsOf: url), old == data { return }
-        guard (try? data.write(to: url, options: .atomic)) != nil, let s = stamp(url) else { return }
-        d.set(s, forKey: stampKey)
+        let box = DomainBox(dict: dict.filter { $0.key != stampKey })
+        let target = url
+        let write: @Sendable () -> String? = {
+            let out = box.dict
+            guard !out.isEmpty, let data = try? PropertyListSerialization.data(fromPropertyList: out, format: .binary, options: 0) else { return nil }
+            // unverändert: nicht schreiben (Drive, Zeitstempel)
+            if let old = try? Data(contentsOf: target), old == data { return nil }
+            guard (try? data.write(to: target, options: .atomic)) != nil else { return nil }
+            return stamp(target)
+        }
+        if sync {
+            if let s = ioQueue.sync(execute: write) { d.set(s, forKey: stampKey) }
+        } else {
+            ioQueue.async {
+                guard let s = write() else { return }
+                DispatchQueue.main.async { d.set(s, forKey: stampKey) }
+            }
+        }
     }
+
+    /// Kopie der Einstellungen für die Warteschlange (Wert nur dort gelesen, nie geändert)
+    private struct DomainBox: @unchecked Sendable { let dict: [String: Any] }
 
     nonisolated(unsafe) private static var pending: DispatchWorkItem?
     nonisolated(unsafe) private static var observer: NSObjectProtocol?
@@ -122,7 +141,7 @@ enum SettingsFile {
         // Beenden: sofort schreiben (auch wenn der Weg über AppDelegate.onQuit nicht läuft)
         quitObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
             E2E.defaults.synchronize()
-            export()
+            export(sync: true)
         }
     }
 }

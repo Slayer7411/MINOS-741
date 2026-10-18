@@ -105,8 +105,7 @@ private let group = "FILTER > DELAY > REVERB"
     m[.button1] = ""
     prefs.fxMappings["GROUP"] = m
     prefs = try JSONDecoder().decode(EnginePrefs.self, from: JSONEncoder().encode(prefs))
-    let core = testController()
-    core.setPrefs(prefs)
+    let core = testController(prefs)
     var s = core.snapshot()
     #expect(s.prefs.fxMappings["GROUP"] == nil && s.prefs.fxMappings[group]?[.knob3] == "s2.size")
     #expect(control(s, 0, .knob3).label == "SIZE" && control(s, 0, .button1).param == nil)

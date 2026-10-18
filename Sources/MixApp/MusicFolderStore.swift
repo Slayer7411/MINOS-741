@@ -449,6 +449,7 @@ struct ExplorerTree: View {
     @State private var open = false
     @State private var expanded: Set<String> = []
     @State private var volumes: [URL] = ExplorerTree.mountedVolumes()
+    @State private var placesRevision = 0
     @State private var text = ""
     @State private var search = ExplorerSearch()
 
@@ -459,10 +460,15 @@ struct ExplorerTree: View {
             .sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }
     }
 
-    static var places: [String] {
+    /// Startordner des Explorers. Ob es sie gibt, steht im Zwischenspeicher (Prüfung im Hintergrund, siehe `body`);
+    /// unbekannt = anzeigen. `revision` nur, damit die Ansicht nach der Prüfung neu gebaut wird
+    static func places(_ revision: Int) -> [String] {
+        _ = revision
+        return placePaths.filter { FileStatCache.shared.cached($0) ?? true }
+    }
+    static var placePaths: [String] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [home.path] + ["Music", "Desktop", "Downloads"].map { home.appendingPathComponent($0).path }
-            .filter { FileManager.default.fileExists(atPath: $0) }
     }
 
     var body: some View {
@@ -485,11 +491,12 @@ struct ExplorerTree: View {
                             Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([v]) }
                         }
                 }
-                ForEach(Self.places, id: \.self) { MusicFolderRow(path: $0, expanded: $expanded) }
+                ForEach(Self.places(placesRevision), id: \.self) { MusicFolderRow(path: $0, expanded: $expanded) }
             }
         } label: {
             MusicFolderRow.label("⌂", "EXPLORER")
         }
+        .onAppear { FileStatCache.shared.refresh(Self.placePaths) { placesRevision += 1 } }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in volumes = Self.mountedVolumes() }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didUnmountNotification)) { _ in volumes = Self.mountedVolumes() }
     }

@@ -29,6 +29,12 @@ public final class MixEngine: @unchecked Sendable {
     private var _routing = Routing()
     private var _watch = OutputWatch()
     private var _lastReconnect: Double?
+    /// Aufträge auf der Geräte-Queue, die die Oberfläche nicht abwartet (Öffnen, Schließen, Schlafen/Aufwachen)
+    private var _busy = 0
+    /// Nur Tests: ersetzt das Öffnen des Geräts (läuft auf der Geräte-Queue, ersetzt `CoreAudioOutput.start`)
+    var openSeamForTest: ((AudioDeviceID?) throws -> Void)?
+    /// Ein Auftrag für das Gerät läuft noch (Oberfläche: „Öffne Gerät …“)
+    public var busy: Bool { stateLock.withLock { _busy > 0 } }
     public var lastError: String? { stateLock.withLock { _lastError } }
     public var routing: Routing { stateLock.withLock { _routing } }
     /// Zustand gegenüber dem Gerät (läuft, wartet auf das Gerät, Ruhezustand) und Zähler
@@ -153,10 +159,34 @@ public final class MixEngine: @unchecked Sendable {
         }
     }
 
+    /// Wie `apply`, kehrt aber sofort zurück (Oberfläche). Öffnen läuft auf der Geräte-Queue in derselben Reihenfolge;
+    /// `busy` bis dahin, `completion` danach auf dem Hauptthread (dann gelten `running`, `routing`, `lastError`)
+    public func applyAsync(_ r: Routing, restart: Bool = false, completion: @escaping @Sendable () -> Void = {}) {
+        inBackground(completion) { self.apply(r, restart: restart) }
+    }
+    /// Wie `stop`, ohne zu warten (Oberfläche)
+    public func stopAsync(completion: @escaping @Sendable () -> Void = {}) {
+        inBackground(completion) { self.output.stop(); self.update(.stopped) }
+    }
+
     /// Ruhezustand: Ausgabe anhalten, Decks bleiben, wie sie sind (laufen nach dem Aufwachen weiter)
     public func willSleep() { onQueue { act(.willSleep) } }
     /// aufgewacht: dasselbe Gerät neu öffnen, sonst darauf warten
     public func didWake() { onQueue { act(.didWake) } }
+    /// Wie `willSleep`, ohne zu warten (Oberfläche)
+    public func willSleepAsync(completion: @escaping @Sendable () -> Void = {}) { inBackground(completion) { self.act(.willSleep) } }
+    /// Wie `didWake`, ohne zu warten (Oberfläche: Öffnen dauert bis ~0,5 s)
+    public func didWakeAsync(completion: @escaping @Sendable () -> Void = {}) { inBackground(completion) { self.act(.didWake) } }
+
+    /// Auftrag auf die Geräte-Queue legen; `busy` gilt bis er durch ist, `completion` läuft danach auf dem Hauptthread
+    private func inBackground(_ completion: @escaping @Sendable () -> Void, _ work: @escaping () -> Void) {
+        stateLock.withLock { _busy += 1 }
+        deviceQueue.async {
+            work()
+            self.stateLock.withLock { self._busy -= 1 }
+            DispatchQueue.main.async(execute: completion)
+        }
+    }
 
     /// nur Selbsttest: Ereignis einspeisen, als käme es vom Gerät (Gerät weg, Ratenwechsel)
     public func simulate(_ e: OutputWatch.Event) { onQueue { act(e) } }
@@ -183,7 +213,8 @@ public final class MixEngine: @unchecked Sendable {
     /// Ausgabe öffnen (Geräte-Queue). `setRate` nur von Hand (Einstellungen) – automatisch wird die Geräterate nie gesetzt
     private func open(_ device: AudioDeviceID?, setRate: Double?) {
         do {
-            try output.start(device: device, engine: core, engineRate: sampleRate, bufferFrames: bufferFrames, setDeviceRate: setRate)
+            if let seam = openSeamForTest { try seam(device) }
+            else { try output.start(device: device, engine: core, engineRate: sampleRate, bufferFrames: bufferFrames, setDeviceRate: setRate) }
             let i = output.info
             stateLock.withLock { _lastError = nil; _routing.device = i.device }
             update(.started(uid: i.uid, rate: i.deviceRate, buffer: i.bufferFrameSize))

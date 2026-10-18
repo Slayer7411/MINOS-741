@@ -291,13 +291,13 @@ final class MixModel {
         let ws = NSWorkspace.shared.notificationCenter
         sleepObservers = [
             ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.engine.willSleep() }
+                MainActor.assumeIsolated { self?.engine.willSleepAsync() }
             },
             ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     print("[audio] aufgewacht: Ausgabe neu öffnen")
-                    self.engine.didWake()
+                    self.engine.didWakeAsync { [weak self] in MainActor.assumeIsolated { self?.refreshEngineStatus() } }
                     self.refreshDevices()
                     self.refreshEngineStatus()
                 }
@@ -876,6 +876,7 @@ final class MixModel {
     /// Engine (wartet auf dieselbe UID, kein Ausweichen auf die Lautsprecher). Hier: gewähltes Interface ist (wieder) da,
     /// die Ausgabe steht, oder die Ausgabe folgt dem Systemstandard und der hat gewechselt.
     private func rerouteReason() -> String? {
+        if engine.busy { return nil }   // Gerät wird gerade geöffnet: der Abschluss meldet sich selbst
         let cur = engine.routing.device, w = engine.watch
         let def = MixEngine.defaultOutputDevice().flatMap { d in outputDevices.contains { $0.id == d } ? d : nil }
         if w.phase == .sleeping { return nil }
@@ -922,12 +923,20 @@ final class MixModel {
         print("[audio] Routing wird angewendet")
         let dev = currentDevice
         let firsts = mixerMode == .external ? deckPairs : Array(repeating: internalPair, count: MixEngine.deckCount)
-        engine.apply(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart)
+        // das Öffnen wartet nicht auf dem Hauptthread: Statuszeile zeigt „Öffne …“, der Abschluss ruft `routingApplied`
+        engine.applyAsync(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart) { [weak self] in
+            MainActor.assumeIsolated { self?.routingApplied() }
+        }
         previewer.setOutput(firstChannel: previewRoute, mute: Session.isSelfTest)   // Selbsttest: nur Pegel messen
         core.setMasterVolume(core.snapshot().masterVolume)
         core.setExternalMixer(mixerMode == .external)
         refreshEngineStatus()
         saveSetup()
+    }
+
+    /// Abschluss von `applyRouting`: Gerät ist geöffnet (oder gescheitert), Anzeige nachziehen
+    private func routingApplied() {
+        refreshEngineStatus()
         pull()
         recorder.routingChanged()
     }
@@ -936,7 +945,9 @@ final class MixModel {
     func refreshEngineStatus() {
         let w = engine.watch
         var s: String
-        if w.waiting || w.phase == .sleeping {
+        if engine.busy {
+            s = String(localized: "Öffne Audio-Gerät …")
+        } else if w.waiting || w.phase == .sleeping {
             s = String(format: String(localized: "Warte auf %@ …"), lostDevice ?? outputDevices.first { $0.uid == w.uid }?.name ?? "?")
         } else if engine.running {
             let dev = outputDevices.first { $0.id == engine.routing.device }

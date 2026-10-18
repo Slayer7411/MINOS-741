@@ -184,6 +184,17 @@ final class E2EControl {
             }
             done(true, ["playlist": name, "keys": keys.count])
 
+        case "collection-playlist-add":
+            // Tracks an eine Playlist der Collection-Datei (Datei wird geschrieben, wenn Schreiben an ist)
+            let name = a["playlist"] as? String ?? ""
+            let keys = a["keys"] as? [String] ?? []
+            guard !name.isEmpty, !keys.isEmpty else { return done(false, "args: playlist, keys") }
+            guard let node = store.root.first(where: { $0.kind == .playlist && $0.name == name }) else {
+                return done(false, "keine Playlist der Collection „\(name)“")
+            }
+            store.addToCollectionPlaylist(node.id, keys: keys)
+            done(true, ["playlist": name, "keys": keys.count])
+
         case "mark-played":
             let keys = Set(a["keys"] as? [String] ?? [])
             history.setPlayed(history.played.union(keys))

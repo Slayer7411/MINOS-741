@@ -123,6 +123,7 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `link` | optional `on` (true/false; absent: toggle) | `{linkEnabled}` (state before the change is applied on the next tick) |
 | `analyze` | `keys` (list), `timeout` (s, default 180) | `{results: [{key, bpm, musicalKey}]}` once all are analysed (`bpm`/`musicalKey` null if not stored); `{fehler}` after the timeout |
 | `add-to-playlist` | `playlist` (name of an own playlist; created if missing), `keys` | `{playlist, keys}` |
+| `collection-playlist-add` | `playlist` (name of a playlist of the collection file), `keys` | `{playlist, keys}`: the tracks go to the end of that playlist in `collection.nml` (backup first, needs `ui.writeCollection`, refused while the collection software runs); the write runs after the reply, so check the file with `file-check` after a `sleep` |
 | `mark-played` | `keys` | `{played}` (count); propagates to the paired instance |
 | `reset-played` | optional `keys` (all if absent) | `{played}` |
 | `shot` | `path` (PNG) | `{path, width, height}` of the main window (pixels) |

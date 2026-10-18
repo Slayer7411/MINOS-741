@@ -206,10 +206,21 @@ struct PlaylistsSection: View, SourceMenus {
             OwnItemsView(items: store.playlists.items, selection: $selection)
             OutlineGroup(store.root.visibleChildren ?? [], children: \.visibleChildren) { node in
                 row(icon(node), node.name)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .background(ui.dropTarget == node.id ? Theme.chitinRaised : .clear)
                     .tag(BrowserSource.node(node))
                     .lineLimit(1)
-                    .help("aus der Collection-Datei (nur lesen)")
+                    .help(collectionHelp(node))
                     .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
+                    // Playlist der Collection: Tracks ablegen (wird in die Datei geschrieben); Smartlist: Hinweis
+                    .treeDropZone(ui.regions, name: "collection drop \(node.name)", highlight: { on in
+                        ui.dropTarget = on ? node.id : (ui.dropTarget == node.id ? nil : ui.dropTarget)
+                    }, accepts: { strings in
+                        strings.contains { TrackDrag.key($0) != nil }
+                    }) { strings in
+                        dropCollection(node, strings)
+                    }
                     .contextMenu {
                         resetPlayedButton(.node(node), marked: ui.marked)
                         autoMixMenuButton(.node(node), marked: ui.marked, mix: mix)
@@ -218,6 +229,23 @@ struct PlaylistsSection: View, SourceMenus {
                         AnalysisMenuButtons { nodeTracks(node) }
                         ImportMenuButton(source: node.name) { nodeTracks(node) }
                         CloudMenuButton(label: node.name) { nodeTracks(node) }
+                        if node.kind == .playlist {
+                            Divider()
+                            Button("Als eigene Playlist übernehmen") {
+                                let it = store.addOwn(.playlist, into: nil, name: node.name, tracks: node.trackKeys)
+                                selection = .own(OwnRef(it))
+                            }
+                        }
+                        if node.kind == .smartlist {
+                            Divider()
+                            // Regel-Text unverändert als eigene Smartlist (wertet wie in der Collection); die Collection bleibt
+                            Button("Bearbeiten … (als eigene Kopie)") {
+                                let rule = SmartRules(rules: [SmartRule(.expression, .matches, node.query)])
+                                let it = store.addOwn(.smartlist, into: nil, name: node.name, rules: rule)
+                                selection = .own(OwnRef(it))
+                                ui.editing = SmartlistDraft(edit: it)
+                            }
+                        }
                     }
             }
         } label: {
@@ -243,12 +271,40 @@ struct PlaylistsSection: View, SourceMenus {
     }
 }
 
+extension PlaylistsSection {
+    /// Hilfetext einer Zeile der Collection: Art, bei Smartlists die Regel (sie wertet die Collection selbst aus)
+    func collectionHelp(_ node: PlaylistNode) -> String {
+        switch node.kind {
+        case .folder: String(localized: "Ordner der Collection (nur lesen)")
+        case .playlist: String(localized: "Playlist der Collection · Tracks hierher ziehen (wird in die Collection-Datei geschrieben)")
+        case .smartlist: String(localized: "Smartlist der Collection · Regel: \(node.query)")
+        }
+    }
+
+    /// Ablegen auf eine Playlist der Collection: ans Ende in die Datei. Smartlist: die Tracks kommen über die Regel
+    func dropCollection(_ node: PlaylistNode, _ strings: [String]) -> Bool {
+        let keys = strings.compactMap(TreeDrag.track)
+        guard !keys.isEmpty else { return false }
+        if node.kind != .playlist {
+            let msg = node.kind == .smartlist
+                ? String(localized: "Smartlist – Tracks kommen über die Regel (Rechtsklick → Bearbeiten …)")
+                : String(localized: "Ordner der Collection – Tracks nur auf normale Playlists ziehen")
+            store.status = msg
+            StatusCenter.post(.info, msg, key: "playlist")
+            return true
+        }
+        store.addToCollectionPlaylist(node.id, keys: keys)
+        return true
+    }
+}
+
 extension PlaylistNode {
-    /// Kinder für den Baum: ohne den eigenen Spiegel `MINOS-741/Playlists` (steht schon als eigener Baum darüber)
+    /// Kinder für den Baum: der eigene Spiegel `MINOS-741` (Playlists, Preparation, History) steht schon als eigene
+    /// Quellen darüber, er fehlt hier, damit nichts doppelt erscheint
     var visibleChildren: [PlaylistNode]? {
         guard kind == .folder else { return nil }
-        guard name == CollectionWriter.ownFolder else { return children }
-        return children.filter { !($0.kind == .folder && $0.name == LibraryStore.ownPlaylistsFolder) }
+        guard name == "$ROOT" else { return children }
+        return children.filter { !($0.kind == .folder && $0.name == CollectionWriter.ownFolder) }
     }
 }
 

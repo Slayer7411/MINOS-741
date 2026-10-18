@@ -749,7 +749,8 @@ final class LibraryStore {
     /// geschrieben (Grund steht in der Statuszeile)
     func writeCollection(_ job: CollectionWriter.Job, redirects: [String: String] = [:],
                          done: @escaping @MainActor (CollectionWriter.Result?) -> Void) {
-        guard !Session.isSelfTest, let url = sourceURL else { done(nil); return }
+        // Selbsttest schreibt nur Kopien im Temp-Ordner (`CollectionWriter.writeAllowed`, sonst Ablehnung im Schreiben)
+        guard let url = sourceURL, CollectionWriter.writeAllowed(url) else { done(nil); return }
         guard !writing else {
             status = String(localized: "Collection-Datei: noch ein Schreibvorgang läuft")
             StatusCenter.post(.info, status, key: "writeback")
@@ -822,6 +823,62 @@ final class LibraryStore {
             status = String(localized: "Collection-Datei nicht geschrieben: \(String(describing: e))")
             StatusCenter.post(.error, status, detail: url.path, key: "writeback")
             done(nil)
+        }
+    }
+
+    // MARK: - Playlists der Collection ändern (Datei)
+
+    /// Knoten einer Playlist der Collection (aktueller Baum), nil wenn es ihn nicht (mehr) gibt
+    func collectionPlaylist(_ id: UUID) -> PlaylistNode? {
+        guard let n = nodes[id], n.kind == .playlist else { return nil }
+        return n
+    }
+
+    /// Tracks an Position `index` (nil = ans Ende) einer Playlist der Collection einfügen; schon drin = nichts. Rückgängig
+    func addToCollectionPlaylist(_ id: UUID, keys: [String], at index: Int? = nil) {
+        changeCollectionPlaylist(id, label: String(localized: "Zur Playlist hinzufügen")) { list in
+            CollectionPlaylists.inserting(keys, into: list, at: index ?? list.count)
+        }
+    }
+
+    /// Einträge einer Playlist der Collection in neue Reihenfolge bringen (Ziehen in der Liste). Rückgängig
+    func moveInCollectionPlaylist(_ id: UUID, keys: [String], to index: Int) {
+        changeCollectionPlaylist(id, label: String(localized: "Reihenfolge ändern")) { list in
+            CollectionPlaylists.moving(keys, in: list, to: index)
+        }
+    }
+
+    /// Neue Liste einer Collection-Playlist: nur mit geschriebenen Änderungen in der Datei (Sicherung, Prüfung, atomar).
+    /// Ist Schreiben in die Collection aus, steht der Weg dorthin in der Statuszeile; ohne Änderung kommt nichts
+    private func changeCollectionPlaylist(_ id: UUID, label: String, _ transform: ([String]) -> [String]) {
+        guard let node = collectionPlaylist(id), !node.uuid.isEmpty else {
+            StatusCenter.post(.warning, String(localized: "Playlist in der Collection nicht gefunden (Baum neu laden)"), key: "writeback")
+            return
+        }
+        let before = node.trackKeys
+        let after = transform(before)
+        guard after != before else {
+            StatusCenter.post(.info, String(localized: "Schon in „\(node.name)“"), key: "playlist")
+            return
+        }
+        guard uiPrefs().writeCollection else {
+            let hint = String(localized: "Playlist „\(node.name)“ nicht geändert: Schreiben in die Collection ist aus. Einstellungen → Collection → „Änderungen in die Collection-Datei schreiben“ einschalten.")
+            status = hint
+            StatusCenter.post(.warning, hint, key: "writeback")
+            return
+        }
+        writeCollectionOrder(uuid: node.uuid, to: after, label: label, undo: false, before: before)
+    }
+
+    /// Reihenfolge einer Collection-Playlist (per UUID) in die Datei schreiben. `undo`: Rückgängig selbst, ohne neuen Schritt
+    private func writeCollectionOrder(uuid: String, to keys: [String], label: String, undo: Bool, before: [String]) {
+        var job = CollectionWriter.Job()
+        job.playlistEdits = [CollectionWriter.PlaylistEdit(uuid: uuid, keys: keys)]
+        writeCollection(job) { r in
+            guard !undo, let r, r.playlistsEdited.contains(uuid) else { return }
+            UndoStack.shared.record(label, before: before, after: keys) { [weak self] b, a, back in
+                self?.writeCollectionOrder(uuid: uuid, to: back ? b : a, label: label, undo: true, before: before)
+            }
         }
     }
 

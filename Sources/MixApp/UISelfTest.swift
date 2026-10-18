@@ -123,6 +123,7 @@ enum UISelfTest {
             ("ungespielt", unplayed),
             ("vorbereiten", prepareMode),
             ("playlist-baum", playlistTree),
+            ("collection-playlist-drop", collectionDrop),
             ("mehrfach-sortierung", multiSort),
             ("wellenform-preset", wavePreset),
             ("einstellungen-suche", settingsSearch),
@@ -960,11 +961,17 @@ enum UITestFixture {
 
                 """
             }
+            // Leere Playlists hinter den Testlisten: die Zeilen der Testlisten bleiben über dem unteren Rand des Fensters
+            let trailing = (1...6).map { "<NODE TYPE=\"PLAYLIST\" NAME=\"UI Ende \($0)\"><PLAYLIST ENTRIES=\"0\" TYPE=\"LIST\" UUID=\"ende\($0)0000000000000000000000000\"></PLAYLIST></NODE>" }.joined(separator: "\n")
             let nml = """
             <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
             <NML VERSION="19"><COLLECTION ENTRIES="\(specs.count)">
             \(entries)</COLLECTION>
-            <PLAYLISTS><NODE TYPE="FOLDER" NAME="$ROOT"><SUBNODES COUNT="0"></SUBNODES></NODE></PLAYLISTS></NML>
+            <PLAYLISTS><NODE TYPE="FOLDER" NAME="$ROOT"><SUBNODES COUNT="8">
+            <NODE TYPE="PLAYLIST" NAME="UI Collection"><PLAYLIST ENTRIES="0" TYPE="LIST" UUID="0123456789abcdef0123456789abcdef"></PLAYLIST></NODE>
+            <NODE TYPE="SMARTLIST" NAME="UI Smart"><SMARTLIST UUID="fedcba9876543210fedcba9876543210"><SEARCH_EXPRESSION QUERY="$COMMENT % &quot;fixture&quot;"></SEARCH_EXPRESSION></SMARTLIST></NODE>
+            \(trailing)
+            </SUBNODES></NODE></PLAYLISTS></NML>
             """
             let url = dir.appendingPathComponent("collection.nml")
             try nml.write(to: url, atomically: true, encoding: .utf8)
@@ -1815,6 +1822,82 @@ final class TableDragInfo: NSObject, NSDraggingInfo {
 extension UISelfTest {
     /// Mehrfach-Sortierung: Klick auf einen Spaltenkopf macht die Spalte zur ersten Sortierspalte, die bisherigen
     /// bleiben dahinter (Kommentar ▼, dann BPM: BPM ▲ · Kommentar ▼2); zweiter Klick dreht; Liste wirklich so sortiert
+    /// Playlist der Collection im Baum als Ziel: Tracks ablegen geht in die Collection-Datei (nur die Kopie im Temp-Ordner
+    /// des Fixtures), Smartlist zeigt den Hinweis, doppelt geht nicht, ohne Schreiben steht der Weg dorthin in der
+    /// Statuszeile, ⌘Z schreibt die alte Reihenfolge zurück
+    static func collectionDrop(_ u: UIDriver, _ t: [Track]) {
+        let pane = u.browser.paneA, store = u.store
+        let source = pane.source, showTree = pane.showTree, hide = u.mix.prefs.ui.hideTreeWithDecks, write = u.mix.prefs.ui.writeCollection
+        pane.showTree = true
+        u.mix.prefs.ui.hideTreeWithDecks = false
+        u.mix.prefs.ui.writeCollection = true   // Schreiben an (nur die Kopie im Temp-Ordner wird geschrieben)
+        defer {
+            pane.source = source
+            pane.showTree = showTree
+            u.mix.prefs.ui.hideTreeWithDecks = hide
+            u.mix.prefs.ui.writeCollection = write
+        }
+        u.spin(0.5)
+        guard let url = store.sourceURL, url.path.hasPrefix(FileManager.default.temporaryDirectory.path) else {
+            log("collection-drop: nur mit Fixture (Kopie im Temp-Ordner), übersprungen")
+            return
+        }
+        guard let id = store.root.first(where: { $0.name == "UI Collection" })?.id else { fail("„UI Collection“ nicht im Baum") }
+        guard let tree = u.views.compactMap({ $0 as? NSTableView }).filter({ !($0 is TrackNSTable) && $0.numberOfRows > 3 })
+            .min(by: { u.frame($0).minX < u.frame($1).minX }) else { fail("Baum von Bereich A nicht gefunden") }
+        func zone(_ name: String) -> NSView? {
+            u.views.first { ($0 as? UITestNamed)?.name == name && $0.window === u.window }
+        }
+        // Zeilen aufscrollen, bis die Ablage der gesuchten Zeile da ist (SwiftUI legt Zeilen erst beim Sichtbarwerden an)
+        func find(_ name: String) -> NSView? {
+            for r in 0..<tree.numberOfRows {
+                // Zeile nach oben scrollen: unten im Baum überdeckt das Fenster die Ablage (Trefferkette endet früher)
+                tree.scroll(NSPoint(x: 0, y: tree.rect(ofRow: r).minY))
+                u.spin(0.05)
+                // nur oberhalb des unteren Randes: darunter trifft der Zug das Fenster nicht (Trefferkette endet früher)
+                if let z = zone(name), u.frame(z).midY > 120 { return z }
+            }
+            return nil
+        }
+        let want = [t[0].key]
+        // frische Ablage je Drop: das Scrollen nach einem Zug verschiebt die Zeilen
+        func at(_ name: String) -> NSPoint { guard let z = find(name) else { fail("Ablage „\(name)“ im Baum fehlt") }; return u.center(z) }
+        let file = { (try? String(contentsOf: url, encoding: .utf8)) ?? "" }
+        let fileAtStart = file()
+        // Ablegen: Datei bekommt den Track, Sicherung liegt davor
+        check(u.drop(string: TrackDrag.prefix + t[0].key, at: at("collection drop UI Collection")), "Drop auf „UI Collection“ nicht angenommen")
+        u.spin(10) { store.collectionPlaylist(id)?.trackKeys == want }
+        check(store.collectionPlaylist(id)?.trackKeys == want, "Nach dem Drop: \(store.collectionPlaylist(id)?.trackKeys ?? []) statt \(want) · Meldung \(store.status)")
+        check((try? NMLParser.parse(url: url))?.root.first { $0.name == "UI Collection" }?.trackKeys == want, "Datei: Playlist ohne den Track")
+        let backups = url.deletingLastPathComponent().appendingPathComponent("Backup MINOS-741")
+        check((try? FileManager.default.contentsOfDirectory(atPath: backups.path))?.isEmpty == false, "keine Sicherung vor dem Schreiben")
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_TREESHOT"] { shot(u, out, "collection-tree") }
+        // doppelt: nichts ändert sich
+        let once = file()
+        check(u.drop(string: TrackDrag.prefix + t[0].key, at: at("collection drop UI Collection")), "Doppelter Drop nicht angenommen")
+        u.spin(1)
+        check(store.collectionPlaylist(id)?.trackKeys == want && file() == once, "Doppelter Track in der Playlist")
+        // Smartlist: Hinweis, Datei bleibt
+        check(u.drop(string: TrackDrag.prefix + t[1].key, at: at("collection drop UI Smart")), "Drop auf die Smartlist nicht angenommen")
+        check(store.status == String(localized: "Smartlist – Tracks kommen über die Regel (Rechtsklick → Bearbeiten …)"), "Smartlist-Hinweis fehlt: \(store.status)")
+        check(file() == once, "Smartlist-Drop hat die Datei geändert")
+        // Schreiben aus: Hinweis mit dem Weg dorthin, Datei bleibt
+        u.mix.prefs.ui.writeCollection = false
+        let statusBefore = store.status
+        check(u.drop(string: TrackDrag.prefix + t[1].key, at: at("collection drop UI Collection")), "Drop bei ausgeschaltetem Schreiben nicht angenommen")
+        check(store.status.contains("UI Collection") && store.status != statusBefore, "Kein Hinweis bei ausgeschaltetem Schreiben: \(store.status)")
+        check(file() == once, "bei ausgeschaltetem Schreiben hat sich die Datei geändert")
+        u.mix.prefs.ui.writeCollection = true
+        // ⌘Z: alte Reihenfolge (leer) zurück in die Datei
+        let label = UndoStack.shared.undo()
+        check(label == String(localized: "Zur Playlist hinzufügen"), "Rückgängig: „\(label ?? "-")“")
+        u.spin(10) { store.collectionPlaylist(id)?.trackKeys == [] }
+        check(store.collectionPlaylist(id)?.trackKeys == [], "⌘Z holt die alte Reihenfolge nicht zurück")
+        check((try? NMLParser.parse(url: url))?.root.first { $0.name == "UI Collection" }?.trackKeys == [], "Datei nach ⌘Z nicht leer")
+        check(fileAtStart.contains("UI Collection"), "Fixture ohne UI Collection")
+        log("collection-drop: ablegen, Sicherung, doppelt, smartlist, schreiben aus, ⌘Z ok")
+    }
+
     static func multiSort(_ u: UIDriver, _ t: [Track]) {
         let pane = u.browser.paneA
         let order0 = pane.sortOrder, source0 = pane.source

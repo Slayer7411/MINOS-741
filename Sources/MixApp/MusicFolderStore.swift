@@ -333,6 +333,9 @@ enum BrowserShot {
         let pane = BrowserPaneModel(name: "Shot", source: .folder(folder))
         let browser = BrowserState()
         browser.store = store
+        // Modell der Baumliste (Decks, Einstellungen) ohne Audio: Engine gleich anhalten, Gerät nur als Vorgabe
+        let mix = MixModel()
+        mix.engine.stop()
         func nodes(_ n: PlaylistNode) -> [PlaylistNode] { (n.kind == .folder ? [] : [n]) + n.children.flatMap(nodes) }
         let lists = nodes(store.root)
         var favs: [BrowserFavorite?] = [BrowserFavorite.source(.collection, store: store),
@@ -346,6 +349,24 @@ enum BrowserShot {
         for (i, f) in favs.enumerated() {
             let t = f.map { String(describing: $0.target(store: store)).prefix(60) } ?? "leer"
             print("[shot] favorit \(i + 1): \(f?.name ?? "—") -> \(t)")
+        }
+        // MIX741_SHOT_LISTS=1: jede Liste der Collection mit Art, Regel-Stand, Trefferzahl und fehlenden Verweisen (nur Ausgabe)
+        if ProcessInfo.processInfo.environment["MIX741_SHOT_LISTS"] == "1" {
+            func walk(_ n: PlaylistNode, _ path: String) {
+                for c in n.children {
+                    let p = path + "/" + c.name
+                    switch c.kind {
+                    case .folder: walk(c, p)
+                    case .playlist:
+                        let missing = c.trackKeys.filter { store.track($0) == nil }.count
+                        print("[liste] \(p) | playlist | eintraege \(c.trackKeys.count) | fehlend \(missing) | treffer \(store.tracks(for: .node(c)).count) | uuid \(c.uuid)")
+                    case .smartlist:
+                        let ok = (try? SmartQuery.parse(c.query)) != nil
+                        print("[liste] \(p) | smartlist | parse \(ok ? "ok" : "FEHLER") | treffer \(store.tracks(for: .node(c)).count) | regel \(c.query) | uuid \(c.uuid)")
+                    }
+                }
+            }
+            walk(store.root, "")
         }
         let shotList = ShotList(tracks: Array(tracks.sorted { ($0.loose ? 1 : 0, $0.artist) < ($1.loose ? 1 : 0, $1.artist) }.prefix(40)))
 
@@ -362,6 +383,7 @@ enum BrowserShot {
             .environment(store)
             .environment(history)
             .environment(browser)
+            .environment(mix)
             .preferredColorScheme(.dark)
             let host = NSHostingView(rootView: view)
             host.frame = NSRect(x: 0, y: 0, width: width, height: height)
@@ -370,6 +392,32 @@ enum BrowserShot {
             win.contentView = host
             spin(3)   // Unterordner der sichtbaren Knoten einlesen lassen
             host.layoutSubtreeIfNeeded()
+            // MIX741_SHOT_EXPAND=1: alle Ebenen der Baumliste aufklappen (PLAYLISTS, Collection-Ordner, Unterordner)
+            // SwiftUI legt die Zeilen tieferer Ebenen erst beim Aufklappen an: Durchgänge, bis sich die Zahl nicht mehr ändert
+            if ProcessInfo.processInfo.environment["MIX741_SHOT_EXPAND"] == "1" {
+                var stack: [NSView] = [host]
+                var outlines: [NSOutlineView] = []
+                while let v = stack.popLast() {
+                    if let o = v as? NSOutlineView { outlines.append(o) }
+                    stack += v.subviews
+                }
+                for o in outlines {
+                    var before = -1
+                    for _ in 0..<12 where o.numberOfRows != before {
+                        before = o.numberOfRows
+                        for r in 0..<o.numberOfRows {
+                            // Archive (History mit ~100 Sitzungen) bleiben zu: nur Ordner bis 60 Einträge
+                            if let it = o.item(atRow: r), o.isExpandable(it), !o.isItemExpanded(it),
+                               (o.dataSource?.outlineView?(o, numberOfChildrenOfItem: it) ?? 0) <= 60 {
+                                o.expandItem(it)
+                            }
+                        }
+                        spin(0.3)
+                        host.layoutSubtreeIfNeeded()
+                    }
+                    print("[shot] baum: \(o.numberOfRows) zeilen aufgeklappt")
+                }
+            }
             if clickTree { treeClick(host, win, pane, store) }
             guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
             host.cacheDisplay(in: host.bounds, to: rep)
@@ -377,7 +425,9 @@ enum BrowserShot {
             print("[shot] \(to.path)")
         }
         let base = out.deletingPathExtension().path
-        render(out, width: 1100)
+        // MIX741_SHOT_HEIGHT=<pt>: Höhe des Hauptbilds (Standard 720), damit der ganze Baum passt
+        let mainHeight = ProcessInfo.processInfo.environment["MIX741_SHOT_HEIGHT"].flatMap { Double($0) }.map { CGFloat($0) } ?? 720
+        render(out, width: 1100, height: mainHeight)
         render(URL(fileURLWithPath: base + "-fav-narrow.png"), width: 620, height: 260)
         // Klick in den Baum wählt trotz ziehbarer Einträge aus; Filter-Favorit aktiv
         render(URL(fileURLWithPath: base + "-fav-click.png"), width: 1100, height: 260, clickTree: true)

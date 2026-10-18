@@ -11,6 +11,7 @@ import MixCore
         let lock = NSLock()
         var sent: [(stamp: UInt64, at: UInt64, beat: Double, on: Bool)] = []
         var received: [(stamp: UInt64, status: UInt8)] = []
+        var halted = false
     }
     let box = Box()
     let out = GrooveOut(name: "MINOS-741 Groove Test", hidden: true)
@@ -36,14 +37,21 @@ import MixCore
 
     out.onSend = { s in
         let on = s.bytes.0 & 0xF0 == 0x90
-        box.lock.withLock { box.sent.append((s.hostTime, mach_absolute_time(), s.beat, on)) }
+        box.lock.withLock {
+            box.sent.append((s.hostTime, mach_absolute_time(), s.beat, on))
+            // nach dem dritten Note-On hält der Takt an: die Sendungen hängen nicht davon ab, wann der Test-Thread aufwacht
+            if on, box.sent.filter(\.on).count == 3 { box.halted = true }
+        }
     }
     var notes = [GrooveNote]()
     for s in stride(from: 2, to: 16, by: 4) { notes.append(GrooveNote(step: s, length: 1, channel: 9, note: 42, velocity: 100)) }
     let t0 = mach_absolute_time() + LinkSession.hostTicks(seconds: 0.05)
-    out.start(clip: GrooveClip(steps: 16, notes: notes), origin: 0) { GrooveOut.Clock(beat: 0, hostTime: t0, bpm: 120) }
-    // bis drei Note-Ons gesendet sind (Beat 2,5 = 1,25 s), höchstens 5 s (voller Rechner)
-    for _ in 0..<500 where box.lock.withLock({ box.sent.filter(\.on).count }) < 3 { try await Task.sleep(for: .milliseconds(10)) }
+    out.start(clip: GrooveClip(steps: 16, notes: notes), origin: 0) {
+        box.lock.withLock { box.halted } ? nil : GrooveOut.Clock(beat: 0, hostTime: t0, bpm: 120)
+    }
+    // bis drei Note-Ons gesendet sind (Beat 2,5 = 1,25 s); Frist per Uhr, nicht per Schleifenzahl (voller Rechner)
+    let deadline = Date().addingTimeInterval(30)
+    while box.lock.withLock({ !box.halted }), Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
     out.stop()
     try await Task.sleep(for: .milliseconds(100))
     MIDIPortDispose(port); MIDIClientDispose(client)

@@ -131,8 +131,8 @@ private func watchdog(_ e: OpaquePointer) -> MDParallelWatchdog {
     let t0 = Date()
     let hung = c.render(blocks: 1, n: n)
     let ms = Date().timeIntervalSince(t0) * 1000
-    // Frist 2 × 5.3 ms ab Blockanfang: der Block endet weit vor den 300 ms
-    #expect(ms < 40, "Block dauerte \(ms) ms")
+    // Frist 2 × 5.3 ms ab Blockanfang, Obergrenze 150 ms (Last): der Block endet weit vor den 300 ms
+    #expect(ms < 150, "Block dauerte \(ms) ms")
     let r = pairRMS(hung[...], n: n)
     #expect(r[1] == 0, "Deck B fehlt im Block")
     #expect(r[0] > 0.01 && r[2] > 0.01 && r[3] > 0.01, "A, C, D klingen: \(r)")

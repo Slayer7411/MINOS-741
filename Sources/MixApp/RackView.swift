@@ -285,44 +285,50 @@ struct RackView: View {
 
     @ViewBuilder private func row(_ k: Int, _ slot: FXSlot, _ count: Int, _ latency: Double?) -> some View {
         let ready = mix.slotReady(b, k)
-        HStack(spacing: 4) {
-            DeckButton(title: "ON", active: slot.on, color: Theme.state, width: 22) { mix.setSlotOn(b, slot: k, !slot.on) }
-                .help("Slot an/aus (aus = durchgereicht, Fahne klingt aus)")
-            Text(verbatim: "\(k + 1)").font(Theme.mono(10, .bold)).foregroundStyle(Theme.muted)
-            Button { picker = k } label: {
-                HStack(spacing: 3) {
-                    Text(verbatim: mix.slotName(slot)).font(Theme.label(10, .bold)).lineLimit(1)
-                        .foregroundStyle(ready ? Theme.bone : Theme.muted)
-                    if slot.isPlugin && !ready { Text(verbatim: "…").font(Theme.mono(10)).foregroundStyle(Theme.muted) }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(Text(verbatim: slotHelp(slot, latency)) + Text(verbatim: " · ") + Text("Klick = anderer Effekt"))
-            .popover(isPresented: Binding(get: { picker == k }, set: { if !$0 { picker = nil } }), arrowEdge: .bottom) {
-                EffectPicker(b: b, replacing: k) { picker = nil }.environment(mix)
-            }
-            Knob(value: Binding(get: { slot.mix }, set: { mix.setSlotMix(b, slot: k, $0) }), range: 0...1, defaultValue: 1,
-                 color: Theme.state, size: 16)
-                .help("D/W des Slots")
-            DeckButton(title: "▲", width: 12, verbatim: true) { mix.moveSlot(b, slot: k, by: -1) }
-                .opacity(k > 0 ? 1 : 0.3).disabled(k == 0)
-                .help("früher im Signalfluss")
-            DeckButton(title: "▼", width: 12, verbatim: true) { mix.moveSlot(b, slot: k, by: 1) }
-                .opacity(k < count - 1 ? 1 : 0.3).disabled(k >= count - 1)
-                .help("später im Signalfluss")
-            if slot.isPlugin {
-                PluginEditButton(b: b, k: k, width: 26)
-            } else {
-                DeckButton(title: "EDIT", width: 26) { params = k }
-                    .help("Parameter des Effekts")
-                    .popover(isPresented: Binding(get: { params == k }, set: { if !$0 { params = nil } }), arrowEdge: .bottom) {
-                        SlotParamsView(b: b, k: k).environment(mix)
+        let bypassed = mix.liveBypassed(slot)
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 4) {
+                DeckButton(title: "ON", active: slot.on, color: Theme.state, width: 22) { mix.setSlotOn(b, slot: k, !slot.on) }
+                    .help("Slot an/aus (aus = durchgereicht, Fahne klingt aus)")
+                Text(verbatim: "\(k + 1)").font(Theme.mono(10, .bold)).foregroundStyle(Theme.muted)
+                Button { picker = k } label: {
+                    HStack(spacing: 3) {
+                        Text(verbatim: mix.slotName(slot)).font(Theme.label(10, .bold)).lineLimit(1)
+                            .foregroundStyle(ready ? Theme.bone : Theme.muted)
+                        if slot.isPlugin && !ready { Text(verbatim: "…").font(Theme.mono(10)).foregroundStyle(Theme.muted) }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(Text(verbatim: slotHelp(slot, latency)) + Text(verbatim: " · ") + Text("Klick = anderer Effekt"))
+                .popover(isPresented: Binding(get: { picker == k }, set: { if !$0 { picker = nil } }), arrowEdge: .bottom) {
+                    EffectPicker(b: b, replacing: k) { picker = nil }.environment(mix)
+                }
+                Knob(value: Binding(get: { slot.mix }, set: { mix.setSlotMix(b, slot: k, $0) }), range: 0...1, defaultValue: 1,
+                     color: Theme.state, size: 16)
+                    .help("D/W des Slots")
+                DeckButton(title: "▲", width: 12, verbatim: true) { mix.moveSlot(b, slot: k, by: -1) }
+                    .opacity(k > 0 ? 1 : 0.3).disabled(k == 0)
+                    .help("früher im Signalfluss")
+                DeckButton(title: "▼", width: 12, verbatim: true) { mix.moveSlot(b, slot: k, by: 1) }
+                    .opacity(k < count - 1 ? 1 : 0.3).disabled(k >= count - 1)
+                    .help("später im Signalfluss")
+                if slot.isPlugin {
+                    PluginEditButton(b: b, k: k, width: 26)
+                } else {
+                    DeckButton(title: "EDIT", width: 26) { params = k }
+                        .help("Parameter des Effekts")
+                        .popover(isPresented: Binding(get: { params == k }, set: { if !$0 { params = nil } }), arrowEdge: .bottom) {
+                            SlotParamsView(b: b, k: k).environment(mix)
+                        }
+                }
+                DeckButton(title: "✕", width: 12, verbatim: true) { mix.removeSlot(b, slot: k) }
+                    .help("Slot entfernen")
             }
-            DeckButton(title: "✕", width: 12, verbatim: true) { mix.removeSlot(b, slot: k) }
-                .help("Slot entfernen")
+            if bypassed {
+                Text("VST3 bypassed in LIVE").font(Theme.mono(8)).foregroundStyle(Theme.state).padding(.leading, 22)
+            }
         }
     }
 
@@ -411,13 +417,13 @@ private struct SlotRow: View {
     @State private var dropping = false
 
     var body: some View {
-        let ready = mix.slotReady(b, k), count = mix.slots(b).count
+        let ready = mix.slotReady(b, k), count = mix.slots(b).count, bypassed = mix.liveBypassed(slot)
         HStack(spacing: 3.z) {
             Text(verbatim: "\(k + 1)").font(Theme.mono(8.z, .bold)).foregroundStyle(Theme.muted).frame(width: 7.z)
             Button { picking = true } label: {
                 Text(verbatim: mix.slotName(slot) + (slot.isPlugin && !ready ? " …" : ""))
                     .font(Theme.label(9.z, .bold)).lineLimit(1).truncationMode(.tail)
-                    .foregroundStyle(ready ? Theme.bone : Theme.muted)
+                    .foregroundStyle(bypassed ? Theme.state : ready ? Theme.bone : Theme.muted)
                     .frame(width: 56.z, alignment: .leading)
                     .contentShape(Rectangle())
             }

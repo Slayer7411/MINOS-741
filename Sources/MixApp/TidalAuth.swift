@@ -1,7 +1,6 @@
 import AppKit
 import CryptoKit
 import Foundation
-import Network
 import Security
 
 /// TIDAL-Anmeldung: OAuth 2.0 Authorization Code mit PKCE für einen öffentlichen Client (kein Client-Secret).
@@ -188,6 +187,7 @@ enum TidalError: LocalizedError {
     case state
     case denied(String)
     case timeout
+    case portBusy
     case cancelled
 
     var errorDescription: String? {
@@ -203,31 +203,61 @@ enum TidalError: LocalizedError {
         case .badResponse: String(localized: "Antwort von TIDAL unlesbar")
         case .state: String(localized: "Anmeldung abgelehnt (state stimmt nicht)")
         case let .denied(e): String(localized: "Anmeldung abgelehnt: \(e)")
-        case .timeout: String(localized: "keine Anmeldung im Browser (Zeitlimit)")
+        case .timeout: String(localized: "Anmeldung abgelaufen: keine Antwort aus dem Browser in 5 Min. – erneut ANMELDEN")
+        case .portBusy: String(localized: "Port 7412 belegt: andere Anmeldung läuft noch")
         case .cancelled: String(localized: "abgebrochen")
         }
     }
 }
 
-/// Einmaliger Empfang des Rücksprungs: nur Loopback, Pfad /tidal/callback; danach Antwortseite und Ende
+/// Einmaliger Empfang des Rücksprungs: nur Loopback, Pfad /tidal/callback; danach Antwortseite und Ende.
+/// Ein Socket je Loopback-Adresse (127.0.0.1 und ::1), nie an alle Schnittstellen: localhost löst der Browser
+/// je nach Einstellung auf eine der beiden auf.
 final class TidalCallbackServer: @unchecked Sendable {
+    static let loopbackHosts = ["127.0.0.1", "::1"]
     private let queue = DispatchQueue(label: "minos.tidal.callback")
-    private var listener: NWListener?
+    private let wantedPort: UInt16
+    /// Port nach `start` (bei 0 der gewählte) und die gebundenen Adressen
+    private(set) var port: UInt16 = 0
+    private(set) var hosts: [String] = []
+    /// nur auf `queue`
+    private var listeners: [DispatchSourceRead] = []
     /// nur auf `queue`
     private var finish: ((Result<[String: String], Error>) -> Void)?
 
+    private enum Bind { case open(Int32), inUse, unavailable }
+
+    init(port: UInt16 = TidalAuth.callbackPort) { wantedPort = port }
+
+    /// Sockets öffnen (sofort lauschend); ohne eine Adresse oder bei belegtem Port ein Fehler
     func start(timeout: TimeInterval, _ done: @escaping (Result<[String: String], Error>) -> Void) throws {
-        guard let port = NWEndpoint.Port(rawValue: TidalAuth.callbackPort) else { throw TidalError.badResponse }
-        let params = NWParameters.tcp
-        params.requiredInterfaceType = .loopback
-        let l = try NWListener(using: params, on: port)
-        l.newConnectionHandler = { [weak self] conn in self?.handle(conn) }
-        l.stateUpdateHandler = { [weak self] st in
-            if case let .failed(e) = st { self?.queue.async { self?.end(.failure(e)) } }
+        var fds: [(fd: Int32, host: String)] = []
+        var p = wantedPort
+        for host in Self.loopbackHosts {
+            switch Self.openListener(host, port: p) {
+            case let .open(fd):
+                if p == 0 { p = Self.localPort(fd) }
+                fds.append((fd, host))
+            case .inUse:
+                fds.forEach { close($0.fd) }
+                throw TidalError.portBusy
+            case .unavailable:
+                continue
+            }
         }
-        queue.sync { finish = done }
-        listener = l
-        l.start(queue: queue)
+        guard !fds.isEmpty else { throw TidalError.portBusy }
+        queue.sync {
+            finish = done
+            port = p
+            hosts = fds.map(\.host)
+            listeners = fds.map { l in
+                let src = DispatchSource.makeReadSource(fileDescriptor: l.fd, queue: queue)
+                src.setEventHandler { [weak self] in self?.accept(l.fd) }
+                src.setCancelHandler { close(l.fd) }
+                src.resume()
+                return src
+            }
+        }
         queue.asyncAfter(deadline: .now() + timeout) { [weak self] in self?.end(.failure(TidalError.timeout)) }
     }
 
@@ -239,37 +269,97 @@ final class TidalCallbackServer: @unchecked Sendable {
     private func end(_ r: Result<[String: String], Error>) {
         guard let f = finish else { return }
         finish = nil
-        listener?.cancel()
-        listener = nil
+        listeners.forEach { $0.cancel() }
+        listeners = []
         f(r)
     }
 
-    private func handle(_ conn: NWConnection) {
-        conn.start(queue: queue)
-        conn.receive(minimumIncompleteLength: 1, maximumLength: 8192) { [weak self] data, _, _, _ in
-            guard let self else { conn.cancel(); return }
-            let line = String(decoding: data ?? Data(), as: UTF8.self).components(separatedBy: "\r\n").first ?? ""
-            let parts = line.split(separator: " ")
-            let target = parts.count >= 2 ? String(parts[1]) : ""
-            let u = URLComponents(string: "http://127.0.0.1" + target)
-            guard u?.path == "/tidal/callback" else {
-                self.respond(conn, status: "404 Not Found", body: "")
+    /// nur auf `queue`: die Anfrage wird auf einem eigenen Thread gelesen, damit eine langsame Verbindung nicht aufhält
+    private func accept(_ lfd: Int32) {
+        let cfd = Darwin.accept(lfd, nil, nil)
+        guard cfd >= 0 else { return }
+        var on: Int32 = 1
+        setsockopt(cfd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let target = Self.requestTarget(cfd)
+            guard URLComponents(string: "http://127.0.0.1" + target)?.path == "/tidal/callback" else {
+                Self.respond(cfd, status: "404 Not Found", body: "")
                 return
             }
             var q: [String: String] = [:]
-            for i in u?.queryItems ?? [] {
+            for i in URLComponents(string: "http://127.0.0.1" + target)?.queryItems ?? [] {
                 if let v = i.value { q[i.name] = v }
             }
             let ok = q["code"] != nil
-            self.respond(conn, status: "200 OK", body: ok
+            Self.respond(cfd, status: "200 OK", body: ok
                 ? "<!doctype html><meta charset=utf-8><title>MINOS-741</title><p style=\"font-family:-apple-system\">MINOS-741: angemeldet, Fenster schließen</p>"
                 : "<!doctype html><meta charset=utf-8><title>MINOS-741</title><p style=\"font-family:-apple-system\">MINOS-741: Anmeldung abgebrochen, Fenster schließen</p>")
-            if ok || q["error"] != nil { self.end(.success(q)) }
+            if ok || q["error"] != nil { self?.queue.async { self?.end(.success(q)) } }
         }
     }
 
-    private func respond(_ c: NWConnection, status: String, body: String) {
+    /// Ziel der Anfrage („/tidal/callback?code=…“); Zeitlimit für Lesen, sonst leer
+    private static func requestTarget(_ fd: Int32) -> String {
+        var tv = timeval(tv_sec: 5, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        var buf = [UInt8](repeating: 0, count: 8192)
+        let cap = buf.count
+        var n = 0
+        while n < cap {
+            let k = buf.withUnsafeMutableBytes { read(fd, $0.baseAddress! + n, cap - n) }
+            if k <= 0 { break }
+            n += k
+            if buf[..<n].contains(10) { break }
+        }
+        let line = String(decoding: buf[..<n], as: UTF8.self).components(separatedBy: "\r\n").first ?? ""
+        let parts = line.split(separator: " ")
+        return parts.count >= 2 ? String(parts[1]) : ""
+    }
+
+    private static func respond(_ fd: Int32, status: String, body: String) {
         let head = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n"
-        c.send(content: Data((head + body).utf8), completion: .contentProcessed { _ in c.cancel() })
+        let bytes = Array((head + body).utf8)
+        _ = bytes.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        close(fd)
+    }
+
+    private static func openListener(_ host: String, port: UInt16) -> Bind {
+        let v6 = host.contains(":")
+        let fd = socket(v6 ? AF_INET6 : AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return .unavailable }
+        var on: Int32 = 1
+        let size = socklen_t(MemoryLayout<Int32>.size)
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, size)
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, size)
+        if v6 { setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, size) }
+        let r: Int32
+        if v6 {
+            var a = sockaddr_in6()
+            a.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            a.sin6_family = sa_family_t(AF_INET6)
+            a.sin6_port = port.bigEndian
+            _ = inet_pton(AF_INET6, host, &a.sin6_addr)
+            r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) } }
+        } else {
+            var a = sockaddr_in()
+            a.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            a.sin_family = sa_family_t(AF_INET)
+            a.sin_port = port.bigEndian
+            _ = inet_pton(AF_INET, host, &a.sin_addr)
+            r = withUnsafePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) } }
+        }
+        guard r == 0, Darwin.listen(fd, 4) == 0 else {
+            let inUse = errno == EADDRINUSE
+            close(fd)
+            return inUse ? .inUse : .unavailable
+        }
+        return .open(fd)
+    }
+
+    private static func localPort(_ fd: Int32) -> UInt16 {
+        var a = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &a) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &len) } }
+        return UInt16(bigEndian: a.sin_port)
     }
 }

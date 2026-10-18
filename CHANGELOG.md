@@ -15,6 +15,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 * basics: `Nach Updates suchen …` in the app menu under About
 * basics: File menu `Einstellungen exportieren …` / `Einstellungen importieren …` (same plist as settings.plist; audio device, two-mac mode, collection and crash folder stay local), `Collection-Backup wiederherstellen …`: lists the backups with date, size and track count, backs up the current collection first, refuses while the collection software runs, validates the backup before replacing it atomically, reloads the library. unit tests (round trip with local keys, backup listing and validation, restore), e2e scenario `backup-restore`
 * basics: dock menu: LIVE, stop all decks, settings, setup
+* LIVE safety: VST3 plugins in FX slots are bypassed while LIVE is on (they run inside the app, a crash would stop the music). AU and built-in effects stay active. the slot shows `VST3 bypassed in LIVE`. switch in settings ALLGEMEIN -> LIVE (`VST3 bei LIVE überbrücken`, default on)
 
 ### changed
 * settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit on an ERWEITERT sub-page per tab (link at the bottom of each tab; search and deep links open it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
@@ -22,6 +23,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 ### fixed
 * audio: switching or reopening the output device no longer blocks the UI (up to ~0.5 s); the status line shows `Öffne Audio-Gerät …` until it is open
 * files: Explorer start folders and `Im Finder zeigen` check file existence off the main thread (cloud folders could stall the UI)
+* TIDAL login: the callback listener on port 7412 accepts IPv4 and IPv6 loopback (`127.0.0.1`, `::1`, so `localhost` works in the browser); never on other interfaces. a timeout shows a clear message (`Anmeldung abgelaufen … erneut ANMELDEN`)
 * updates: release downloads redirected to `release-assets.githubusercontent.com` were refused silently (check found nothing). redirect target allowed, https only. `Jetzt prüfen` shows every outcome with its reason; automatic failures go to the status log after the first one
 * fx golden test `fxPluginSlotBitIdenticalToOldChain` passes again: its hash was not updated with the glide snap (9f8fd46). the plugin slot output differs from the old chain only where the deck volume glide snaps to its target (from block 9, max 4.99e-5 relative); hash `0x6f8a07943193ddbf`
 

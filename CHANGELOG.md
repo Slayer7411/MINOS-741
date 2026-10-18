@@ -20,9 +20,11 @@ codenames: every major version is named after a circle of hell (minos judges the
 * LIVE safety: VST3 plugins in FX slots are bypassed while LIVE is on (they run inside the app, a crash would stop the music). AU and built-in effects stay active. the slot shows `VST3 bypassed in LIVE`. switch in settings ALLGEMEIN -> LIVE (`VST3 bei LIVE überbrücken`, default on)
 
 ### changed
+* b2b group: when the leader is lost, a follower keeps its tempo and shows "lead lost" in the strip (no tempo jump). Pair protocol version 7.
 * settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit on an ERWEITERT sub-page per tab (link at the bottom of each tab; search and deep links open it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
 
 ### security
+* b2b group: followers no longer take the tempo from Link. Link carries no peer identity, so any Link device on the LAN could steer B2B followers. Followers now follow the leader's clock over the authenticated, encrypted pair channel (20 Hz plus offset estimate per link). Link peers only show as info in the strip.
 * two macs: pairing without a code. both macs run X25519 key agreement with commit-then-reveal (a SHA256 commitment over id, name, key and nonce before any reveal), derive a random 32-byte key and show the same six-digit number; the user confirms on both macs, only then the key is stored in the Keychain per peer. the earlier key derived from a six-digit code is gone (an offline brute force of a recorded handshake is no longer possible). handshake (HMAC over nonces) and frames (ChaCha20-Poly1305, per-direction counters against replay) are unchanged. the peer is identified by a random instance id kept locally (not synced), not by the computer name. unpaired peers are refused; settings offer pair / unpair. remote debug is off by default. unit tests (commitment mismatch, same key and number on both sides, different keys, unpaired peer, replay, tampering), e2e scenario `pair-two-instances` (pair-start, pair-confirm, unpair and refused reconnect)
 
 ### fixed

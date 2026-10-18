@@ -76,10 +76,12 @@ let fxGoldenScenarios: [(String, [(String, Int)], Bool)] = [
 
 /// Prüfsummen, aufgenommen mit a3b680b (vor den Insert-Slots)
 /// neu 2026-10-16: Gleitregler springen aufs Ziel (Deck-Ausgang bit-genau), alle Pfade gleich verschoben
+/// plugin neu 2026-10-18 (9f8fd46 hatte ihn nicht): gleicher Snap auf volSm, Abweichung zur alten Kette nur ab Block 9
+/// (Frame 341), max. 4,99e-5 relativ (< kSnap). Ohne Snap der alte Hash 0xb633b06914920918
 private let fxGoldenHashes: [String: UInt64] = [
     "group": 0x8c8046fe2ee78064, "group-dw": 0x6b9eddc55d9c346c, "group-gater": 0x7324c2d53c6c5ee2, "filter": 0x5464d7a0b342b2a3,
     "delay": 0xf544da8cca638ec, "reverb": 0x4206d0271bf767a6, "reverb-fdn": 0x1879204139f57e9a, "gater": 0xeafe3883598d2efe,
-    "roll": 0x4ea489239746dcd0, "flanger": 0xfe3e34006749f04e, "phaser": 0x9ac9d6f42748d5e4, "plugin": 0xb633b06914920918,
+    "roll": 0x4ea489239746dcd0, "flanger": 0xfe3e34006749f04e, "phaser": 0x9ac9d6f42748d5e4, "plugin": 0x6f8a07943193ddbf,
 ]
 
 /// Vorlage „Gruppe“ (aus GRP) und Einzel-Slot (aus SNGL) rechnen bitgleich wie vorher, über alle Blöcke

@@ -130,9 +130,22 @@ private func watchdog(_ e: OpaquePointer) -> MDParallelWatchdog {
 }
 
 @Test func parallelWatchdogSkipsHungWorker() {
-    let c = FourDecks(parallel: true)
     let n = 256
-    _ = c.render(blocks: 20, n: n)                        // eingeschwungen, Worker laufen
+    // Aufwärmen: 20 Blöcke parallel, bis ein Lauf ganz ohne Fristablauf bleibt. Unter CPU-Überlast reißt die Frist
+    // (der Kern rechnet dann seriell); so ein Lauf zählt nicht und wird mit frischer, parallel geschalteter Instanz
+    // wiederholt. Obergrenze 10 s.
+    var c = FourDecks(parallel: true)
+    let deadline = Date().addingTimeInterval(10)
+    var warmed = false
+    while !warmed && Date() < deadline {
+        _ = c.render(blocks: 20, n: n)                    // eingeschwungen, Worker laufen
+        if watchdog(c.e).timeouts == 0 && mdsp_parallel(c.e) {
+            warmed = true
+        } else {
+            c = FourDecks(parallel: true)
+        }
+    }
+    #expect(warmed, "kein Aufwärmen ohne Fristablauf innerhalb von 10 s")
     #expect(watchdog(c.e).timeouts == 0)
     mdsp_debug_stall_worker(c.e, 0, 300_000, false)        // Deck B hängt 300 ms beim Rechnen
     let t0 = Date()

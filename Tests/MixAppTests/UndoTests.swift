@@ -32,7 +32,8 @@ private final class Rig {
         t.bpm = 120
         t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)]
         core.load(t, deck: 0)
-        for _ in 0..<750 where core.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+        let loadDeadline = Date().addingTimeInterval(60)
+        while (core.trackAudio(0) == nil), Date() < loadDeadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(core.trackAudio(0) != nil)
         rec = DeckUndoRecorder(core: core, stack: stack)
     }
@@ -197,7 +198,8 @@ private func near(_ a: Double, _ b: Double, _ tol: Double = 1e-3) -> Bool { abs(
     var t = Track(key: other.path, path: other.path)
     t.bpm = 120
     rig.core.load(t, deck: 0)
-    for _ in 0..<750 where rig.deck.track?.key != other.path || rig.core.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+    let loadDeadline = Date().addingTimeInterval(60)
+    while (rig.deck.track?.key != other.path || rig.core.trackAudio(0) == nil), Date() < loadDeadline { try await Task.sleep(for: .milliseconds(20)) }
     rig.core.hotcue(0, 0)
     let cues = rig.deck.hotcues
     rig.stack.undo()

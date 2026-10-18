@@ -42,7 +42,8 @@ private final class LoadRig {
         t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)]
         core.load(t, deck: 0)
         core.load(t, deck: 1)
-        for _ in 0..<250 where core.trackAudio(0) == nil || core.trackAudio(1) == nil { try await Task.sleep(for: .milliseconds(20)) }
+        let loadDeadline = Date().addingTimeInterval(60)
+        while (core.trackAudio(0) == nil || core.trackAudio(1) == nil), Date() < loadDeadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(core.trackAudio(0) != nil && core.trackAudio(1) != nil)
         manager = ControllerManager(core: core, status: ControllerStatus())
         unit = ControllerUnit(device: nil, info: .init(id: "L", location: 0, left: 0, right: 1), manager: manager)

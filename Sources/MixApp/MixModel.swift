@@ -99,9 +99,22 @@ final class MixModel {
         guard on != live else { return }
         live = on
         LiveMode.set(on)
+        applyLiveBypass()
         if !fromPeer { PairLink.shared.sendLive(on) }
-        StatusCenter.post(on ? .ok : .info, on ? String(localized: "LIVE: kein Ruhezustand, kein Bildschirmschoner")
-                                              : String(localized: "LIVE aus"), key: "live")
+        // LIVE mit VST3-Plugins: eine Meldung mit den überbrückten Plugins statt des Hinweises auf den Ruhezustand
+        let bypassed = on ? core.liveBypassNames() : []
+        if !bypassed.isEmpty {
+            StatusCenter.post(.warning, String(format: String(localized: "LIVE: VST3-Plugins überbrückt (Absturzschutz) – %@"),
+                                               bypassed.joined(separator: ", ")), key: "live")
+        } else {
+            StatusCenter.post(on ? .ok : .info, on ? String(localized: "LIVE: kein Ruhezustand, kein Bildschirmschoner")
+                                                  : String(localized: "LIVE aus"), key: "live")
+        }
+    }
+
+    /// LIVE und Einstellung „VST3 bei LIVE überbrücken“ an den Kern (wirkt sofort, auch bei laufendem LIVE)
+    private func applyLiveBypass() {
+        core.setLiveBypass(live: live, vst3: prefs.ui.liveBypassVST3)
     }
 
     var focusedDeck = 0 { didSet { if focusedDeck != oldValue { updateHarmony() } } }
@@ -126,6 +139,7 @@ final class MixModel {
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
             if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
             if prefs.record != oldValue.record { recorder.updateMonitoring() }
+            if prefs.ui.liveBypassVST3 != oldValue.ui.liveBypassVST3 { applyLiveBypass() }
             // Decks ausgeblendet (1 Deck, Profil, Zwei-Mac-Modus): Tasten und Doppelklick laden ins erste sichtbare
             if let first = visibleDecks.first, !visibleDecks.contains(focusedDeck) { focusedDeck = first }
         }
@@ -780,6 +794,10 @@ final class MixModel {
     func slotReady(_ b: Int, _ k: Int) -> Bool {
         let r = b == MixController.masterBus ? masterReady : fxUnits[b].ready
         return k < r.count ? r[k] : !(slots(b).indices.contains(k) && slots(b)[k].isPlugin)
+    }
+    /// eingeschalteter VST3-Slot, der bei LIVE trocken läuft (Hinweis am Slot)
+    func liveBypassed(_ s: FXSlot) -> Bool {
+        s.on && LiveBypass.bypassed(live: live, enabled: prefs.ui.liveBypassVST3, vst3InProcess: s.id.hasPrefix("vst3:"))
     }
     func pluginError(_ b: Int) -> String? { b == MixController.masterBus ? masterPluginError : fxUnits[b].pluginError }
     func addSlot(_ b: Int, _ id: String) { run { core.addSlot(b, id: id) } }

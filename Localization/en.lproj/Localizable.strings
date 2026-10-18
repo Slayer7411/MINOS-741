@@ -1678,7 +1678,8 @@
 "Antwort von TIDAL unlesbar" = "unreadable response from TIDAL";
 "Anmeldung abgelehnt (state stimmt nicht)" = "sign-in rejected (state mismatch)";
 "Anmeldung abgelehnt: %@" = "sign-in rejected: %@";
-"keine Anmeldung im Browser (Zeitlimit)" = "no sign-in in the browser (time limit)";
+"Anmeldung abgelaufen: keine Antwort aus dem Browser in 5 Min. – erneut ANMELDEN" = "sign-in timed out: no answer from the browser in 5 min – sign in again";
+"Port 7412 belegt: andere Anmeldung läuft noch" = "port 7412 in use: another sign-in is still running";
 "TIDAL" = "TIDAL";
 "Abmelden" = "Sign out";
 "angemeldet" = "signed in";
@@ -1916,6 +1917,10 @@
 "LIVE: kein Ruhezustand, kein Bildschirmschoner, Display bleibt an (gekoppelt: beide Macs)" = "LIVE: no sleep, no screen saver, display stays on (paired: both Macs)";
 "LIVE: kein Ruhezustand, kein Bildschirmschoner" = "LIVE: no sleep, no screen saver";
 "LIVE aus" = "LIVE off";
+"LIVE: VST3-Plugins überbrückt (Absturzschutz) – %@" = "LIVE: VST3 plugins bypassed (crash protection) – %@";
+"VST3 bei LIVE überbrücken" = "Bypass VST3 during LIVE";
+"Bei LIVE rechnen VST3-Plugins nicht mehr (Slot trocken): laufen im Prozess, ein Absturz risse MINOS-741 mit. Audio Units und eingebaute Effekte bleiben aktiv." = "During LIVE VST3 plugins do not process (slot dry): they run inside the app, a crash would take MINOS-741 down with it. Audio units and built-in effects stay active.";
+"Bei LIVE rechnen VST3-Plugins nicht mehr (Slot trocken): Absturzschutz, Audio Units bleiben aktiv" = "During LIVE VST3 plugins do not process (slot dry): crash protection, audio units stay active";
 "Zwei Macs: dieser Mac schreibt in Collection und History; an = der andere gibt ab" = "Two Macs: this Mac writes the collection and history; on = the other one stops";
 "Zwei Decks" = "Two decks";
 "Deck %@ spielt auf diesem Mac" = "Deck %@ plays on this Mac";

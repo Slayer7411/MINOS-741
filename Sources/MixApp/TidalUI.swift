@@ -94,7 +94,9 @@ struct TidalSettingsSection: View {
                         error = nil
                         let id = mix.prefs.ui.tidalClientID
                         signing = Task { @MainActor in
-                            do { _ = try await TidalAuth.signIn(clientID: id) } catch { if !(error is CancellationError) { self.error = "\(error)" } }
+                            do { _ = try await TidalAuth.signIn(clientID: id) } catch {
+                                if !(error is CancellationError) { self.error = (error as? LocalizedError)?.errorDescription ?? "\(error)" }
+                            }
                             signedIn = TidalAuth.signedIn
                             signing = nil
                         }

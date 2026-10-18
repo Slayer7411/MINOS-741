@@ -324,6 +324,8 @@ enum SettingsIndex {
             e(t, "Zeilen & Felder", "browser.shortvalues", "Werte kürzen", kw: "kürzen short values original mix om ext rmx bpm datum"),
             e(t, "Zeilen & Felder", "browser.trackparts", "SPALTE TRACK (ZWEIZEILIG)", kw: "reihenfolge teile order parts kommentar zuerst vorlage"),
             e("ALLGEMEIN", "LIVE", "browser.live.auto", "Lesbarkeit bei LIVE automatisch", kw: "live auto club strobe dj"),
+            e("ALLGEMEIN", "LIVE", "general.live.vst3", "VST3 bei LIVE überbrücken", hint: "Bei LIVE rechnen VST3-Plugins nicht mehr (Slot trocken): Absturzschutz, Audio Units bleiben aktiv",
+              kw: "live vst3 plugin absturz crash überbrücken bypass sicher safety"),
             e("LIVE & SYNC", "Live-Lesbarkeit", "browser.live.on", "Live-Lesbarkeit in der Liste", kw: "live club strobe lesbar readable font"),
             e("LIVE & SYNC", "Live-Lesbarkeit", "browser.live.size", "Schriftgröße der Liste", kw: "live font size schrift groß"),
             e("LIVE & SYNC", "Live-Lesbarkeit", "browser.live.weight", "Schnitt", kw: "live weight medium semibold regular fett"),

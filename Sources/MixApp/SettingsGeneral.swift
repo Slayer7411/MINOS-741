@@ -72,6 +72,10 @@ struct GeneralSettings: View {
             Section("LIVE") {
                 Toggle("Lesbarkeit bei LIVE automatisch", isOn: $mix.prefs.ui.liveListAuto)
                     .settingsAnchor("browser.live.auto")
+                Toggle("VST3 bei LIVE überbrücken", isOn: $mix.prefs.ui.liveBypassVST3)
+                    .settingsAnchor("general.live.vst3")
+                Text("Bei LIVE rechnen VST3-Plugins nicht mehr (Slot trocken): laufen im Prozess, ein Absturz risse MINOS-741 mit. Audio Units und eingebaute Effekte bleiben aktiv.")
+                    .settingsHint()
             }
             Section("Start") {
                 Toggle("Played-Status beim Start zurücksetzen", isOn: $mix.prefs.ui.resetPlayedOnStart)

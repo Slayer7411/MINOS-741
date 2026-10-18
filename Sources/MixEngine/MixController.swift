@@ -1806,6 +1806,7 @@ public final class MixController: @unchecked Sendable {
         var fx = state.fx[u]
         // D/W der Unit wirkt nur, wenn ein Bedienelement darauf liegt (sonst voll nass, z. B. D/W auf dem Mix des Plugins)
         if !state.fxControls[u].contains(where: { $0.param?.id == "dw" }) { fx.dryWet = 1 }
+        fx = liveBypassed(u, fx)
         for d in state.decks.indices { applyCoreFX(unit: u, deck: d, fx, assigned: state.decks[d].fxAssign[u]) }
     }
 
@@ -2034,6 +2035,40 @@ public final class MixController: @unchecked Sendable {
     private func coreUnit(_ b: Int) -> Int { b == Self.masterBus ? MixEngine.masterUnit : b }
     private func busName(_ b: Int) -> String { b == Self.masterBus ? "MASTER" : "FX \(b + 1)" }
     private func applyBus(_ b: Int) { if b == Self.masterBus { applyMasterFX() } else { applyFX(b) } }
+
+    /// LIVE und Einstellung „VST3 bei LIVE überbrücken“ (`LiveBypass`); die App setzt sie bei jeder Änderung
+    private var liveMode = false, liveBypassVST3 = false
+
+    public func setLiveBypass(live: Bool, vst3: Bool) {
+        locked {
+            guard live != liveMode || vst3 != liveBypassVST3 else { return }
+            liveMode = live; liveBypassVST3 = vst3
+            for b in 0...Self.masterBus { applyBus(b) }
+        }
+    }
+
+    /// Slot hält eine VST3-Instanz und ist bei LIVE überbrückt
+    private func isLiveBypassed(_ b: Int, _ k: Int) -> Bool {
+        LiveBypass.bypassed(live: liveMode, enabled: liveBypassVST3, vst3InProcess: slotInsts(b, k)?.first?.isVST3 ?? false)
+    }
+
+    /// Überbrückte Plugin-Slots einer Unit (Master: `masterBus`) trocken an den Kern: Schalter aus, der Kern blendet aus
+    private func liveBypassed(_ b: Int, _ fx: FXUnitState) -> FXUnitState {
+        var x = fx
+        for k in x.slots.indices { x.slots[k].on = LiveBypass.effectiveOn(x.slots[k].on, bypassed: isLiveBypassed(b, k)) }
+        return x
+    }
+
+    /// Namen der Plugin-Slots, die gerade bei LIVE überbrückt sind (eingeschaltet, VST3 geladen)
+    public func liveBypassNames() -> [String] {
+        locked {
+            (0...Self.masterBus).flatMap { b in
+                slots(b).indices.compactMap { k in
+                    slots(b)[k].on && isLiveBypassed(b, k) ? slotInsts(b, k)?.first?.info.name : nil
+                }
+            }
+        }
+    }
 
     /// Instanzen des k-ten Slots (alle Decks), nil = kein Plugin oder (noch) nicht geladen
     private func slotInsts(_ b: Int, _ k: Int) -> [PluginInstance]? {
@@ -2404,7 +2439,7 @@ public final class MixController: @unchecked Sendable {
     private func applyMasterFX() {
         syncRack(Self.masterBus)
         let m = state.masterFX
-        let fx = FXUnitState(slots: m.slots.map { s in var x = s; x.on = s.on && m.on; return x }, dryWet: m.dryWet)
+        let fx = liveBypassed(Self.masterBus, FXUnitState(slots: m.slots.map { s in var x = s; x.on = s.on && m.on; return x }, dryWet: m.dryWet))
         applyCoreFX(unit: MixEngine.masterUnit, deck: 0, fx, assigned: true)
         engine.setMasterFXChannel(state.externalMixer ? nil : engine.routing.firstChannel.first)
     }

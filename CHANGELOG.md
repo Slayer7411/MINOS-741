@@ -26,6 +26,9 @@ codenames: every major version is named after a circle of hell (minos judges the
 
 ### fixed
 * engine: plugin parameter reads and listener setup no longer run under the controller lock (a slow plugin stalled the 5 ms control tick)
+* engine: setting an FX parameter writes the plugin outside the controller lock too (an AU parameter write no longer stalls the control tick)
+* vst3: parameter edits and restart requests raised by a plugin during audio processing go through a preallocated event ring (256 entries, overflow counted, never blocks) and are handled on the control thread; the audio thread no longer allocates, locks or reloads the plugin
+* engine: data race between the audio thread and late deck workers on the sub-block counter (ThreadSanitizer): each worker job carries its own copy
 * audio: switching or reopening the output device no longer blocks the UI (up to ~0.5 s); the status line shows `Öffne Audio-Gerät …` until it is open
 * files: Explorer start folders and `Im Finder zeigen` check file existence off the main thread (cloud folders could stall the UI)
 * TIDAL login: the callback listener on port 7412 accepts IPv4 and IPv6 loopback (`127.0.0.1`, `::1`, so `localhost` works in the browser); never on other interfaces. a timeout shows a clear message (`Anmeldung abgelaufen … erneut ANMELDEN`)

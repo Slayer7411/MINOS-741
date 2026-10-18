@@ -1871,6 +1871,7 @@ extension UISelfTest {
         check((try? NMLParser.parse(url: url))?.root.first { $0.name == "UI Collection" }?.trackKeys == want, "Datei: Playlist ohne den Track")
         let backups = url.deletingLastPathComponent().appendingPathComponent("Backup MINOS-741")
         check((try? FileManager.default.contentsOfDirectory(atPath: backups.path))?.isEmpty == false, "keine Sicherung vor dem Schreiben")
+        if let out = ProcessInfo.processInfo.environment["MIX741_UITEST_TREESHOT"] { shot(u, out, "collection-tree") }
         // doppelt: nichts ändert sich
         let once = file()
         check(u.drop(string: TrackDrag.prefix + t[0].key, at: at("collection drop UI Collection")), "Doppelter Drop nicht angenommen")

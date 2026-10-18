@@ -25,9 +25,11 @@ codenames: every major version is named after a circle of hell (minos judges the
 
 ### security
 * b2b group: followers no longer take the tempo from Link. Link carries no peer identity, so any Link device on the LAN could steer B2B followers. Followers now follow the leader's clock over the authenticated, encrypted pair channel (20 Hz plus offset estimate per link). Link peers only show as info in the strip.
+* two macs: session partners follow the leader over the pair clock too (authenticated pairing), not Link. Link devices on the LAN no longer steer a session pair; Link stays an output on both macs.
 * two macs: pairing without a code. both macs run X25519 key agreement with commit-then-reveal (a SHA256 commitment over id, name, key and nonce before any reveal), derive a random 32-byte key and show the same six-digit number; the user confirms on both macs, only then the key is stored in the Keychain per peer. the earlier key derived from a six-digit code is gone (an offline brute force of a recorded handshake is no longer possible). handshake (HMAC over nonces) and frames (ChaCha20-Poly1305, per-direction counters against replay) are unchanged. the peer is identified by a random instance id kept locally (not synced), not by the computer name. unpaired peers are refused; settings offer pair / unpair. remote debug is off by default. unit tests (commitment mismatch, same key and number on both sides, different keys, unpaired peer, replay, tampering), e2e scenario `pair-two-instances` (pair-start, pair-confirm, unpair and refused reconnect)
 
 ### fixed
+* MIDI clock: when the queue ran late, clock bytes were stamped at "now" and left the grid under load; the stamps now stay on the grid
 * audio: switching or reopening the output device no longer blocks the UI (up to ~0.5 s); the status line shows `Öffne Audio-Gerät …` until it is open
 * files: Explorer start folders and `Im Finder zeigen` check file existence off the main thread (cloud folders could stall the UI)
 * TIDAL login: the callback listener on port 7412 accepts IPv4 and IPv6 loopback (`127.0.0.1`, `::1`, so `localhost` works in the browser); never on other interfaces. a timeout shows a clear message (`Anmeldung abgelaufen … erneut ANMELDEN`)

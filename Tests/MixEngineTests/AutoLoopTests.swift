@@ -55,10 +55,13 @@ private func load(_ cues: [Cue] = [], bpm: Double = 128, trim: TrackTrim = Track
     let c = MixController()
     var p = EnginePrefs()
     p.phraseAnchor = .off
+    // der Wächter (4 s ohne Daten) gilt nur hängenden Dekodern; unter Last der ganzen Suite darf er das Laden nicht abbrechen
+    p.loadTimeout = 60
     edit(&p)
     c.setPrefs(p)
     c.load(t, deck: 0, trim: trim)
-    for _ in 0..<500 where c.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+    let deadline = Date().addingTimeInterval(60)
+    while c.trackAudio(0) == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
     #expect(c.trackAudio(0) != nil, "\(c.snapshot().decks[0].error ?? "-")")
     return (c, url)
 }

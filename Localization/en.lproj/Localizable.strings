@@ -2219,3 +2219,14 @@
 "Kopplung aufgehoben" = "Pairing removed";
 "unbekannt" = "unknown";
 "noch kein Code" = "no code yet";
+"Als B2B koppeln" = "Pair as B2B";
+"Als Session koppeln" = "Pair as session";
+"B2B" = "B2B";
+"Session" = "Session";
+"B2B-Gruppe: %@" = "B2B group: %@";
+"Deck %@ auf beiden" = "deck %@ on both";
+"TAKT: %@" = "TAKT: %@";
+"%@ schreibt" = "%@ writes";
+"%lld ungekoppelter Link-Teilnehmer ignoriert" = "%lld unpaired Link peer ignored";
+"Zwei-Mac: der Session-Partner ist schon gekoppelt (nur einer)" = "Two Macs: the session partner is already paired (only one)";
+"Zwei-Mac: die B2B-Gruppe ist voll (höchstens 8 Macs)" = "Two Macs: the B2B group is full (at most 8 Macs)";

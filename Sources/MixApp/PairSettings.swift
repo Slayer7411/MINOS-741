@@ -69,3 +69,25 @@ struct PairingRows: View {
         .frame(width: 360)
     }
 }
+
+/// Leiste: die verbundenen Macs (Name, Modus, ◆ = Führung, Tempo); ohne Verbindung nichts
+struct PairGroupStrip: View {
+    private let link = PairLink.shared
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(link.info) { i in
+                HStack(spacing: 3) {
+                    if i.leader { Text("◆") }
+                    Text(i.name).lineLimit(1)
+                    if let m = i.mode { Text(m == .session ? "SESSION" : "B2B").foregroundStyle(.secondary) }
+                    if let bpm = i.bpm, bpm > 0 { Text(String(format: "%.1f", bpm)).foregroundStyle(.secondary) }
+                }
+                .font(Theme.mono(10))
+                .help(i.mode == nil ? "Dieser Mac" : "Verbunden: \(i.name)")
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(maxWidth: 360)
+    }
+}

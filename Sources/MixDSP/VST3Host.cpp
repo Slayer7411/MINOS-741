@@ -123,6 +123,46 @@ struct ParamRing {
     void pop() { tail.fetch_add(1, std::memory_order_release); }
 };
 
+/// Ereignis aus dem Audio-Thread (performEdit / restartComponent während process())
+struct HostEvent {
+    enum Kind : uint32_t { kEdit = 0, kRestart = 1 };
+    Kind kind;
+    uint32_t id;
+    ParamValue value;
+    int32 flags;
+};
+
+/// Ereignisse vom Audio-Thread zum Steuer-Thread: vorab angelegt, ein Schreiber (Audio-Thread), ein Leser
+/// (mdvst3_drain_events). Voll: der Ereignis wird verworfen und gezählt, nie gewartet.
+struct HostEventRing {
+    static constexpr uint32_t N = 256;
+    HostEvent buf[N];
+    std::atomic<uint32_t> head{0}, tail{0};
+    std::atomic<uint32_t> dropped{0};
+
+    bool push(const HostEvent &e) {
+        uint32_t h = head.load(std::memory_order_relaxed), t = tail.load(std::memory_order_acquire);
+        if (h - t >= N) { dropped.fetch_add(1, std::memory_order_relaxed); return false; }
+        buf[h % N] = e;
+        head.store(h + 1, std::memory_order_release);
+        return true;
+    }
+    bool pop(HostEvent &e) {
+        uint32_t t = tail.load(std::memory_order_relaxed);
+        if (t == head.load(std::memory_order_acquire)) return false;
+        e = buf[t % N];
+        tail.store(t + 1, std::memory_order_release);
+        return true;
+    }
+};
+
+/// > 0, solange der aktuelle Thread in process() eines Plugins rechnet (Host-Rückrufe dann nur in den Ring)
+static thread_local int renderDepth = 0;
+struct RenderScope {
+    RenderScope() { ++renderDepth; }
+    ~RenderScope() { --renderDepth; }
+};
+
 struct VST3Plugin;
 
 /// IComponentHandler: Änderungen aus der Ansicht des Plugins → Prozessor + Zuhörer
@@ -174,6 +214,7 @@ struct VST3Plugin final : MDPlugin {
     ProcessData data{};
     int64_t position = 0;
     ParamRing ring;
+    HostEventRing hostEvents;
     /// 0 frei, 1 Audio-Thread rechnet, 2 Steuer-Thread baut um
     std::atomic<int> busy{0};
     std::atomic<uint32_t> latency{0};
@@ -226,13 +267,14 @@ struct VST3Plugin final : MDPlugin {
 
 tresult PLUGIN_API ComponentHandler::performEdit(ParamID id, ParamValue v) {
     if (!plug) return kResultFalse;
+    if (renderDepth > 0) { plug->hostEvents.push({HostEvent::kEdit, id, v, 0}); return kResultOk; }
     plug->ring.push(id, v);
     plug->notify(id, v);
     return kResultOk;
 }
 
-tresult PLUGIN_API ComponentHandler::restartComponent(int32 flags) {
-    if (!plug) return kResultFalse;
+/// Umbau/Latenz/Werte neu lesen (Steuer-Thread: Plugin-Aufrufe und Umbau, der Block wartet kurz)
+static tresult applyRestart(VST3Plugin *plug, int32 flags) {
     if (flags & kLatencyChanged) {
         if (plug->processor) plug->latency.store(plug->processor->getLatencySamples());
     }
@@ -245,6 +287,12 @@ tresult PLUGIN_API ComponentHandler::restartComponent(int32 flags) {
         }
     }
     return kResultOk;   // kIoChanged: Busse bleiben, wie sie beim Öffnen eingerichtet wurden
+}
+
+tresult PLUGIN_API ComponentHandler::restartComponent(int32 flags) {
+    if (!plug) return kResultFalse;
+    if (renderDepth > 0) { plug->hostEvents.push({HostEvent::kRestart, 0, 0, flags}); return kResultOk; }
+    return applyRestart(plug, flags);
 }
 
 tresult PLUGIN_API PlugFrame::resizeView(IPlugView *v, ViewRect *r) {
@@ -276,6 +324,7 @@ void VST3Plugin::reset() {
 }
 
 void VST3Plugin::process(float *L, float *R, int n) {
+    RenderScope renderScope;
     if (n <= 0 || uint32_t(n) > maxFrames) return;
     int expected = 0;
     if (!busy.compare_exchange_strong(expected, 1, std::memory_order_acquire)) return;   // wird gerade umgebaut: trocken
@@ -628,6 +677,35 @@ uint32_t mdvst3_latency(MDPlugin *mp) {
 uint32_t mdvst3_tail(MDPlugin *mp) {
     auto *p = asVST3(mp);
     return p ? p->tailFrames.load() : 0;
+}
+
+void mdvst3_drain_events(MDPlugin *mp) {
+    auto *p = asVST3(mp);
+    if (!p) return;
+    HostEvent e{};
+    while (p->hostEvents.pop(e)) {
+        if (e.kind == HostEvent::kEdit) {
+            p->ring.push(e.id, e.value);
+            p->notify(e.id, e.value);
+        } else {
+            applyRestart(p, e.flags);
+        }
+    }
+}
+
+int mdvst3_selftest_event_ring(int n) {
+    HostEventRing ring;
+    int dropped = 0;
+    for (int i = 0; i < n; i++) {
+        if (!ring.push({HostEvent::kEdit, uint32_t(i), 0, 0})) dropped++;
+    }
+    HostEvent e{};
+    uint32_t next = 0;
+    while (ring.pop(e)) {
+        if (e.id != next) return -1;   // Reihenfolge verletzt
+        next++;
+    }
+    return dropped == int(ring.dropped.load()) ? dropped : -1;
 }
 
 void mdvst3_set_listener(MDPlugin *mp, MDVST3ParamListener f, void *ctx) {

@@ -276,3 +276,11 @@ private func throughCore(_ inst: PluginInstance, fs: Double = 48000, seconds: Do
                                         path: "/nonexistent.vst3"))
     #expect(!bad.passed && bad.log.hasPrefix("open:"))
 }
+
+/// Ereignisse Audio-Thread → Steuer-Thread (performEdit/restartComponent während process()): Reihenfolge, Überlauf zählt
+@Test func vst3HostEventRingKeepsOrderAndCountsDrops() {
+    #expect(mdvst3_selftest_event_ring(200) == 0)     // passt, in Reihenfolge
+    #expect(mdvst3_selftest_event_ring(256) == 0)     // voll, nichts verworfen
+    #expect(mdvst3_selftest_event_ring(300) == 44)    // 256 Plätze: 44 verworfen, nie gewartet
+    #expect(mdvst3_selftest_event_ring(1000) == 744)
+}

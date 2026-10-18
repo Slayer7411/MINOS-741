@@ -274,6 +274,12 @@ public final class PluginInstance: @unchecked Sendable {
         mdplug_process(ptr, l, r, Int32(n))
     }
 
+    /// VST3: Ereignisse des Audio-Threads abarbeiten (Zuhörer, Umbau). Vom Steuer-Thread, außerhalb der Sperre des Controllers
+    func drainHostEvents() {
+        guard isVST3 else { return }
+        mdvst3_drain_events(ptr)
+    }
+
     deinit {
         stopObserving()
         if isVST3 {

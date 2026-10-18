@@ -76,6 +76,11 @@ uint32_t mdvst3_tail(MDPlugin *p);
 /// Kommt auf dem UI-Thread.
 typedef void (*MDVST3ParamListener)(void *ctx, uint32_t id, double normalized);
 void mdvst3_set_listener(MDPlugin *p, MDVST3ParamListener f, void *ctx);
+/// Ereignisse aus dem Audio-Thread (Edit, Umbau während process()) hier abarbeiten: Zuhörer und Umbau laufen dabei
+/// auf dem aufrufenden (Steuer-)Thread. Nie aus dem Audio-Thread aufrufen.
+void mdvst3_drain_events(MDPlugin *p);
+/// Test: Ring mit n Ereignissen füllen und in Reihenfolge leeren. Liefert die Zahl verworfener Ereignisse, -1 bei Fehler.
+int mdvst3_selftest_event_ring(int n);
 
 /// eigene Ansicht (IPlugView, "editor") in `nsView` hängen; Größe in *width/*height. Wünscht das Plugin eine andere
 /// Größe, kommt `resize` (UI-Thread). false = keine eigene Ansicht.

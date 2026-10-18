@@ -25,10 +25,11 @@ public enum PairClock {
 }
 
 /// Uhrenabgleich über die Verbindung (NTP-artig): Ping (t0) und Pong (t1 Empfang, t2 Antwort) liefern den Versatz
-/// `remote − local` und die Laufzeit. Der Versatz des Samples mit der kleinsten Laufzeit im Fenster gilt, weil dort
-/// die Wartezeit im Netz am kleinsten ist.
+/// `remote − local` und die Laufzeit. Gemittelt werden die `best` Samples mit der kleinsten Laufzeit im Fenster: dort
+/// wartet das Paket am wenigsten, und die unterschiedliche Wartezeit beider Richtungen mittelt sich heraus.
 public struct PairClockSync: Sendable {
-    public static let window = 16
+    public static let window = 64
+    public static let best = 16
     private var samples: [(delay: Int64, offset: Int64)] = []
 
     public init() {}
@@ -42,7 +43,11 @@ public struct PairClockSync: Sendable {
     }
 
     /// Versatz `remote − local` in Mikrosekunden; nil ohne Sample
-    public var offset: Int64? { samples.min { $0.delay < $1.delay }?.offset }
+    public var offset: Int64? {
+        let low = samples.sorted { $0.delay < $1.delay }.prefix(Self.best)
+        guard !low.isEmpty else { return nil }
+        return low.reduce(Int64(0)) { $0 + $1.offset } / Int64(low.count)
+    }
     public var count: Int { samples.count }
 }
 

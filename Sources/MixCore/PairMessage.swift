@@ -18,8 +18,14 @@ public enum PairMessage: Codable, Equatable, Sendable {
     case debugReply(id: Int, ok: Bool, body: String)
     /// Takt: Master-Deck spielt dort, und wer führt Link (nach dem Verbinden und bei jeder Änderung; `leader` = Anspruch)
     case clock(playingMaster: Bool, leader: Bool)
+    /// B2B-Gruppe: Tempo dieses Macs (Anzeige in der Leiste, auch über eine Session-Verbindung)
+    case tempo(bpm: Double)
+    /// B2B-Gruppe: Führung. `holder` führt, `lamport` zählt die Übergaben (spätester gewinnt, Gleichstand: kleinere Kennung)
+    case lead(lamport: Int, holder: String)
+    /// Modus dieses Macs für die Verbindung (vor allem anderen): wirksam ist der strengere der beiden
+    case mode(PairMode)
 
-    public static let version = 5
+    public static let version = 6
 
     public func json() -> Data { (try? JSONEncoder().encode(self)) ?? Data() }
 

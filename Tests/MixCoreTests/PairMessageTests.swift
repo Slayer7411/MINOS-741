@@ -50,7 +50,7 @@ import Testing
     for m in msgs { stream.append(m.line()) }
     var r = PairLineReader<PairMessage>()
     #expect(r.feed(stream) == msgs)
-    #expect(PairMessage.version == 5)
+    #expect(PairMessage.version == 6)
 }
 
 @Test func pairClockMessageRoundTrip() {
@@ -59,5 +59,5 @@ import Testing
     var stream = Data()
     for m in msgs { stream.append(m.line()) }
     #expect(r.feed(stream) == msgs)
-    #expect(PairMessage.version == 5)
+    #expect(PairMessage.version == 6)
 }

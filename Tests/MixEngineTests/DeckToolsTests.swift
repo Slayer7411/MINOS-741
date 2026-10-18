@@ -8,7 +8,7 @@ import MixDSP
 /// 120 BPM, Grid ab 0 -> Beat = 0,5 s; Datei 24 s.
 private func controller(keys: [Int] = [21, 9], cues: [Cue] = [], _ edit: (inout EnginePrefs) -> Void = { _ in }) async throws -> (MixController, URL) {
     let url = try writeWAV(rate: 44100, channels: 2, seconds: 24)
-    let c = MixController()
+    let c = testController()
     var p = EnginePrefs()
     edit(&p)
     c.setPrefs(p)
@@ -85,7 +85,7 @@ private let loopCue = Cue(name: "Loop", kind: .loop, startMs: 4500, lengthMs: 20
 
 private func activeLoopController(_ mode: ActiveLoopMode = .always) async throws -> (MixController, URL) {
     let url = try writeWAV(rate: 44100, channels: 2, seconds: 24)
-    let c = MixController()
+    let c = testController()
     var p = EnginePrefs()
     p.activeLoopMode = mode
     c.setPrefs(p)

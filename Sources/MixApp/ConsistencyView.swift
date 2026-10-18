@@ -111,15 +111,19 @@ final class ConsistencyModel {
     }
 
     func showInFinder(_ ids: Set<Int>) {
-        let urls = findings.filter { ids.contains($0.id) }.map(\.path).filter { FileManager.default.fileExists(atPath: $0) }
-            .map { URL(fileURLWithPath: $0) }
-        if urls.isEmpty, let f = findings.first(where: { ids.contains($0.id) }) {
-            // Datei fehlt: nächsten vorhandenen Ordner zeigen
-            var dir = (f.path as NSString).deletingLastPathComponent
-            while !dir.isEmpty, dir != "/", !FileManager.default.fileExists(atPath: dir) { dir = (dir as NSString).deletingLastPathComponent }
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: dir)])
-        } else {
-            NSWorkspace.shared.activateFileViewerSelecting(urls)
+        // Existenzprüfung im Hintergrund (Cloud-Ordner: ein stat kann Sekunden hängen), Finder erst danach
+        let paths = findings.filter { ids.contains($0.id) }.map(\.path)
+        Task.detached(priority: .userInitiated) {
+            let urls = paths.filter { FileManager.default.fileExists(atPath: $0) }.map { URL(fileURLWithPath: $0) }
+            var show = urls
+            if urls.isEmpty, let first = paths.first {
+                // Datei fehlt: nächsten vorhandenen Ordner zeigen
+                var dir = (first as NSString).deletingLastPathComponent
+                while !dir.isEmpty, dir != "/", !FileManager.default.fileExists(atPath: dir) { dir = (dir as NSString).deletingLastPathComponent }
+                show = [URL(fileURLWithPath: dir)]
+            }
+            let target = show
+            await MainActor.run { NSWorkspace.shared.activateFileViewerSelecting(target) }
         }
     }
 

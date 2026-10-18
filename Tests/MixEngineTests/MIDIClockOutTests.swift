@@ -56,10 +56,17 @@ import MixCore
     #expect(received.first?.status == 0xFA, "erstes Ereignis: Start")
     #expect(received.last?.status == 0xFC, "letztes Ereignis: Stop")
     let clocks = received.filter { $0.status == 0xF8 }
-    // 1,5 s × 48 Takte/s = 72, knapp darüber oder darunter durch den Startpunkt
-    #expect((68...76).contains(clocks.count), "Takte: \(clocks.count)")
-    // Zeitstempel auf dem Raster: 1/48 s Abstand (Fehler unter 0,5 ms, Host-Zeit-Rundung)
+    // Takte gegen das Raster, nicht gegen eine Anzahl in einem Wanduhr-Fenster (das streckt sich unter Last):
+    // 1/48 s je Takt; lückenlos heißt Anzahl = Spanne der Zeitstempel / Takt + 1
     let perTick = Double(LinkSession.micros(hostTicks: LinkSession.hostTicks(seconds: 1))) / 1e6 / 48
+    let span: Double = {
+        guard let first = clocks.first, let last = clocks.last else { return 0 }
+        return Double(LinkSession.micros(hostTicks: last.stamp &- first.stamp)) / 1e6
+    }()
+    #expect(clocks.count == Int((span / perTick).rounded()) + 1, "Takte \(clocks.count) passen nicht zum Raster über \(span) s")
+    // Der Takt lief über das Spielfenster (1,5 s Wanduhr; Untergrenze 1,0 s, Rest als Puffer für Anlauf und Stopp)
+    #expect(span >= 1.0, "Takte nur über \(span) s verteilt")
+    // Zeitstempel auf dem Raster: 1/48 s Abstand (Fehler unter 0,5 ms, Host-Zeit-Rundung)
     var stampErr = 0.0
     for (a, b) in zip(clocks, clocks.dropFirst()) {
         let d = Double(LinkSession.micros(hostTicks: b.stamp &- a.stamp)) / 1e6

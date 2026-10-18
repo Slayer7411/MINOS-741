@@ -26,17 +26,38 @@ extension TrackTableController {
 
     func tableView(_ tv: NSTableView, validateDrop info: NSDraggingInfo, proposedRow row: Int,
                    proposedDropOperation op: NSTableView.DropOperation) -> NSDragOperation {
-        guard model?.ownPlaylistID != nil, !dropKeys(info.draggingPasteboard).isEmpty else { return [] }
+        guard model?.ownPlaylistID != nil || model?.collectionPlaylistID != nil, !dropKeys(info.draggingPasteboard).isEmpty else { return [] }
         tv.setDropRow(row, dropOperation: .above)
         return (info.draggingSource as? NSTableView) === tv ? .move : .copy
     }
 
     func tableView(_ tv: NSTableView, acceptDrop info: NSDraggingInfo, row: Int, dropOperation: NSTableView.DropOperation) -> Bool {
-        guard let model, let store, let id = model.ownPlaylistID else { return false }
+        guard let model, let store else { return false }
         let keys = dropKeys(info.draggingPasteboard)
         guard !keys.isEmpty else { return false }
-        drop(keys, at: row, into: id, reorder: (info.draggingSource as? NSTableView) === tv, store: store, model: model)
-        return true
+        let reorder = (info.draggingSource as? NSTableView) === tv
+        if let id = model.ownPlaylistID {
+            drop(keys, at: row, into: id, reorder: reorder, store: store, model: model)
+            return true
+        }
+        if let id = model.collectionPlaylistID {
+            dropCollection(keys, at: row, into: id, reorder: reorder, store: store, model: model)
+            return true
+        }
+        return false
+    }
+
+    /// Ablegen auf eine Playlist der Collection: Reihenfolge und Einfügen gehen in die Datei (Sicherung, Prüfung)
+    func dropCollection(_ keys: [String], at row: Int, into id: UUID, reorder: Bool, store: LibraryStore, model: BrowserPaneModel) {
+        guard let node = store.collectionPlaylist(id) else { return }
+        let rows = shownRows
+        let index = row >= 0 && row < rows.count ? node.trackKeys.firstIndex(of: rows[row].key) ?? node.trackKeys.count : node.trackKeys.count
+        if reorder {
+            store.moveInCollectionPlaylist(id, keys: keys, to: index)
+            if !model.sortOrder.isEmpty { model.sortOrder = [] }
+        } else {
+            store.addToCollectionPlaylist(id, keys: keys, at: index)
+        }
     }
 
     /// Ablegen vor Zeile `row` der angezeigten Liste: gleiche Tabelle = Reihenfolge (zeigt danach die Playlist-
@@ -90,6 +111,14 @@ extension BrowserPaneModel {
     /// eigene Playlist als Quelle (Ablegen, Reihenfolge, ⌫)
     var ownPlaylistID: UUID? {
         if case let .own(r) = source, r.kind == .playlist { return r.id }
+        return nil
+    }
+}
+
+extension BrowserPaneModel {
+    /// Playlist der Collection als Quelle (Ablegen, Reihenfolge in die Datei)
+    var collectionPlaylistID: UUID? {
+        if case let .node(n) = source, n.kind == .playlist { return n.id }
         return nil
     }
 }

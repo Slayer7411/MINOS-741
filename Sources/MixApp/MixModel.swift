@@ -99,9 +99,22 @@ final class MixModel {
         guard on != live else { return }
         live = on
         LiveMode.set(on)
+        applyLiveBypass()
         if !fromPeer { PairLink.shared.sendLive(on) }
-        StatusCenter.post(on ? .ok : .info, on ? String(localized: "LIVE: kein Ruhezustand, kein Bildschirmschoner")
-                                              : String(localized: "LIVE aus"), key: "live")
+        // LIVE mit VST3-Plugins: eine Meldung mit den überbrückten Plugins statt des Hinweises auf den Ruhezustand
+        let bypassed = on ? core.liveBypassNames() : []
+        if !bypassed.isEmpty {
+            StatusCenter.post(.warning, String(format: String(localized: "LIVE: VST3-Plugins überbrückt (Absturzschutz) – %@"),
+                                               bypassed.joined(separator: ", ")), key: "live")
+        } else {
+            StatusCenter.post(on ? .ok : .info, on ? String(localized: "LIVE: kein Ruhezustand, kein Bildschirmschoner")
+                                                  : String(localized: "LIVE aus"), key: "live")
+        }
+    }
+
+    /// LIVE und Einstellung „VST3 bei LIVE überbrücken“ an den Kern (wirkt sofort, auch bei laufendem LIVE)
+    private func applyLiveBypass() {
+        core.setLiveBypass(live: live, vst3: prefs.ui.liveBypassVST3)
     }
 
     var focusedDeck = 0 { didSet { if focusedDeck != oldValue { updateHarmony() } } }
@@ -126,6 +139,7 @@ final class MixModel {
             if prefs.engine != oldValue.engine { core.setPrefs(prefs.engine) }
             if prefs.ui.previewVolume != oldValue.ui.previewVolume { previewer.setVolume(prefs.ui.previewVolume) }
             if prefs.record != oldValue.record { recorder.updateMonitoring() }
+            if prefs.ui.liveBypassVST3 != oldValue.ui.liveBypassVST3 { applyLiveBypass() }
             // Decks ausgeblendet (1 Deck, Profil, Zwei-Mac-Modus): Tasten und Doppelklick laden ins erste sichtbare
             if let first = visibleDecks.first, !visibleDecks.contains(focusedDeck) { focusedDeck = first }
         }
@@ -291,13 +305,13 @@ final class MixModel {
         let ws = NSWorkspace.shared.notificationCenter
         sleepObservers = [
             ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.engine.willSleep() }
+                MainActor.assumeIsolated { self?.engine.willSleepAsync() }
             },
             ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     print("[audio] aufgewacht: Ausgabe neu öffnen")
-                    self.engine.didWake()
+                    self.engine.didWakeAsync { [weak self] in MainActor.assumeIsolated { self?.refreshEngineStatus() } }
                     self.refreshDevices()
                     self.refreshEngineStatus()
                 }
@@ -781,6 +795,10 @@ final class MixModel {
         let r = b == MixController.masterBus ? masterReady : fxUnits[b].ready
         return k < r.count ? r[k] : !(slots(b).indices.contains(k) && slots(b)[k].isPlugin)
     }
+    /// eingeschalteter VST3-Slot, der bei LIVE trocken läuft (Hinweis am Slot)
+    func liveBypassed(_ s: FXSlot) -> Bool {
+        s.on && LiveBypass.bypassed(live: live, enabled: prefs.ui.liveBypassVST3, vst3InProcess: s.id.hasPrefix("vst3:"))
+    }
     func pluginError(_ b: Int) -> String? { b == MixController.masterBus ? masterPluginError : fxUnits[b].pluginError }
     func addSlot(_ b: Int, _ id: String) { run { core.addSlot(b, id: id) } }
     func replaceSlot(_ b: Int, slot: Int, _ id: String) {
@@ -876,6 +894,7 @@ final class MixModel {
     /// Engine (wartet auf dieselbe UID, kein Ausweichen auf die Lautsprecher). Hier: gewähltes Interface ist (wieder) da,
     /// die Ausgabe steht, oder die Ausgabe folgt dem Systemstandard und der hat gewechselt.
     private func rerouteReason() -> String? {
+        if engine.busy { return nil }   // Gerät wird gerade geöffnet: der Abschluss meldet sich selbst
         let cur = engine.routing.device, w = engine.watch
         let def = MixEngine.defaultOutputDevice().flatMap { d in outputDevices.contains { $0.id == d } ? d : nil }
         if w.phase == .sleeping { return nil }
@@ -922,12 +941,20 @@ final class MixModel {
         print("[audio] Routing wird angewendet")
         let dev = currentDevice
         let firsts = mixerMode == .external ? deckPairs : Array(repeating: internalPair, count: MixEngine.deckCount)
-        engine.apply(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart)
+        // das Öffnen wartet nicht auf dem Hauptthread: Statuszeile zeigt „Öffne …“, der Abschluss ruft `routingApplied`
+        engine.applyAsync(MixEngine.Routing(device: dev?.id, firstChannel: firsts), restart: restart) { [weak self] in
+            MainActor.assumeIsolated { self?.routingApplied() }
+        }
         previewer.setOutput(firstChannel: previewRoute, mute: Session.isSelfTest)   // Selbsttest: nur Pegel messen
         core.setMasterVolume(core.snapshot().masterVolume)
         core.setExternalMixer(mixerMode == .external)
         refreshEngineStatus()
         saveSetup()
+    }
+
+    /// Abschluss von `applyRouting`: Gerät ist geöffnet (oder gescheitert), Anzeige nachziehen
+    private func routingApplied() {
+        refreshEngineStatus()
         pull()
         recorder.routingChanged()
     }
@@ -936,7 +963,9 @@ final class MixModel {
     func refreshEngineStatus() {
         let w = engine.watch
         var s: String
-        if w.waiting || w.phase == .sleeping {
+        if engine.busy {
+            s = String(localized: "Öffne Audio-Gerät …")
+        } else if w.waiting || w.phase == .sleeping {
             s = String(format: String(localized: "Warte auf %@ …"), lostDevice ?? outputDevices.first { $0.uid == w.uid }?.name ?? "?")
         } else if engine.running {
             let dev = outputDevices.first { $0.id == engine.routing.device }

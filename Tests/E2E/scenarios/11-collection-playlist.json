@@ -1,0 +1,22 @@
+{
+  "name": "collection-playlist",
+  "description": "Track in eine Playlist der Collection legen: Schreiben an, Datei bekommt den Eintrag, Sicherung davor, App zeigt den neuen Stand",
+  "instances": ["A"],
+  "steps": [
+    {"do": "snapshot", "expect": [
+      {"path": "ok", "equals": true},
+      {"path": "body.library.loaded", "equals": true},
+      {"path": "body.library.playlists", "equals": 2}
+    ]},
+    {"do": "set-prefs", "args": {"ui": {"writeCollection": true}}, "expect": [{"path": "ok", "equals": true}]},
+    {"do": "collection-playlist-add", "args": {"playlist": "Peak", "keys": ["${key:t02.wav}"]}, "expect": [
+      {"path": "ok", "equals": true},
+      {"path": "body.keys", "equals": 1}
+    ]},
+    {"do": "sleep", "seconds": 3.0},
+    {"do": "file-check", "path": "${root}/collection/collection.nml", "contains": "${key:t02.wav}"},
+    {"do": "file-check", "path": "${root}/collection/Backup MINOS-741", "exists": true},
+    {"do": "select-source", "args": {"source": "playlist:Peak"}, "expect": [{"path": "body.source", "equals": "node:Peak"}]},
+    {"do": "list", "expect": [{"path": "body.count", "equals": 4}]}
+  ]
+}

@@ -80,6 +80,8 @@ extension CollectionWriter {
         public var newEntries: [Track] = []
         /// eigene Playlists unter `$ROOT/MINOS-741` (nil = Playlists nicht anfassen)
         public var playlists: [NMLOwnNode]?
+        /// Playlists der Collection (außerhalb von MINOS-741): neue Reihenfolge je Knoten, per UUID
+        public var playlistEdits: [PlaylistEdit] = []
         /// Einträge entfernen (ENTRY-Block weg); Verweise in allen Playlists fallen weg
         public var remove: Set<String> = []
         /// entfernte Einträge -> Behalter: Verweise in den Playlists zeigen auf den Behalter (ohne Dublette)
@@ -97,7 +99,22 @@ extension CollectionWriter {
 
         public var isEmpty: Bool {
             changes.isEmpty && analyses.isEmpty && cues.isEmpty && moves.isEmpty && newEntries.isEmpty && playlists == nil
-                && remove.isEmpty && info.isEmpty && cueAdds.isEmpty
+                && remove.isEmpty && info.isEmpty && cueAdds.isEmpty && playlistEdits.isEmpty
+        }
+    }
+
+    /// Neue Reihenfolge einer Playlist der Collection. Der Knoten wird über seine UUID gefunden (muss in der Datei
+    /// genau einmal stehen); `keys` ist die komplette neue Liste der Track-Schlüssel
+    public struct PlaylistEdit: Sendable, Equatable {
+        public var uuid: String
+        public var keys: [String]
+        /// doppelte Schlüssel erlauben (sonst Fehler vor dem Schreiben)
+        public var allowDuplicates: Bool
+
+        public init(uuid: String, keys: [String], allowDuplicates: Bool = false) {
+            self.uuid = uuid
+            self.keys = keys
+            self.allowDuplicates = allowDuplicates
         }
     }
 
@@ -416,6 +433,67 @@ extension CollectionWriter {
         return (out, total)
     }
 
+    /// Playlist mit der UUID aus `edit` im PLAYLISTS-Teil (ab `<PLAYLISTS>`): die Einträge kommen in der neuen Reihenfolge.
+    /// Vorhandene Einträge bleiben Zeichen für Zeichen (je Schlüssel der Reihe nach), neue wie die Collection; ENTRIES
+    /// wird auf die neue Zahl gesetzt. Refusal bei: UUID nicht oder mehrfach in der Datei, fremder Inhalt im Knoten,
+    /// doppelte Schlüssel ohne `allowDuplicates`, Schlüssel nicht in der Collection
+    static func patchCollectionPlaylist(_ tail: String, edit: PlaylistEdit, index: NMLEntryIndex) throws -> String {
+        let attr = "UUID=\"\(edit.uuid)\""
+        var hits: [Range<String.Index>] = []
+        var from = tail.startIndex
+        while let r = tail.range(of: attr, options: .literal, range: from..<tail.endIndex) { hits.append(r); from = r.upperBound }
+        guard let at = hits.first, hits.count == 1 else {
+            throw Failure.invalidResult(hits.isEmpty ? "Playlist-ID nicht gefunden: \(edit.uuid)" : "Playlist-ID mehrfach in der Datei: \(edit.uuid)")
+        }
+        guard let start = tail.range(of: "<PLAYLIST ", options: [.literal, .backwards], range: tail.startIndex..<at.lowerBound)?.lowerBound,
+              tail.range(of: "</PLAYLIST>", options: .literal, range: start..<at.lowerBound) == nil,
+              let headEnd = tagEnd(tail, from: start), at.upperBound <= headEnd,   // UUID im Start-Tag von PLAYLIST (nicht SMARTLIST)
+              let close = tail.range(of: "</PLAYLIST>", options: .literal, range: headEnd..<tail.endIndex) else {
+            throw Failure.invalidResult("Playlist-Knoten nicht lesbar: \(edit.uuid)")
+        }
+        let body = String(tail[headEnd..<close.lowerBound])
+        let entries = playlistEntries(body)
+        // nur Einträge im Knoten: alles andere wäre beim Umbau verloren
+        var rest = body
+        for e in entries.reversed() { rest.removeSubrange(e.range) }
+        guard rest.allSatisfy(\.isWhitespace) else { throw Failure.invalidResult("unbekannter Inhalt in der Playlist: \(edit.uuid)") }
+        if !edit.allowDuplicates, Set(edit.keys).count != edit.keys.count {
+            throw Failure.invalidResult("doppelte Einträge nicht erlaubt")
+        }
+        var pool: [String: [String]] = [:]
+        for e in entries { pool[e.key, default: []].append(String(body[e.range])) }
+        var out = ""
+        for k in edit.keys {
+            guard index.raw[k] != nil || pool[k] != nil else { throw Failure.invalidResult("Track nicht in der Collection: \(k)") }
+            if var list = pool[k], !list.isEmpty {
+                out += list.removeFirst()
+                pool[k] = list
+            } else {
+                out += "<ENTRY><PRIMARYKEY TYPE=\"TRACK\" KEY=\"\(escape(k))\"></PRIMARYKEY>\n</ENTRY>\n"
+            }
+        }
+        let head = setRawAttr("ENTRIES", String(edit.keys.count), in: String(tail[start..<headEnd]))
+        return String(tail[..<start]) + head + out + "</PLAYLIST>" + String(tail[close.upperBound...])
+    }
+
+    /// Playlists der Collection nach dem Schreiben: gleiche Knoten in gleicher Reihenfolge, nur die geänderten Listen
+    /// haben die neue Liste (Knoten per UUID). Sonst Refusal-artiger Fehler
+    static func validatePlaylists(old: PlaylistNode, new: PlaylistNode, edits: [PlaylistEdit]) throws {
+        func flat(_ n: PlaylistNode) -> [PlaylistNode] { n.children.flatMap { [$0] + flat($0) } }
+        let a = flat(old), b = flat(new)
+        guard a.count == b.count else { throw Failure.invalidResult("Anzahl Knoten geändert: \(a.count) -> \(b.count)") }
+        for (x, y) in zip(a, b) {
+            guard x.kind == y.kind, x.name == y.name, x.uuid == y.uuid, x.query == y.query else {
+                throw Failure.invalidResult("Knoten verändert: \(x.name)")
+            }
+            if x.kind == .playlist, let e = edits.first(where: { $0.uuid == x.uuid }) {
+                guard y.trackKeys == e.keys else { throw Failure.invalidResult("Playlist nicht wie geschrieben: \(x.name)") }
+            } else {
+                guard x.trackKeys == y.trackKeys else { throw Failure.invalidResult("fremde Playlist geändert: \(x.name)") }
+            }
+        }
+    }
+
     // MARK: - Schreiben
 
     public enum Refusal: Error, Equatable, CustomStringConvertible {
@@ -515,6 +593,14 @@ extension CollectionWriter {
                 res.removedRefs = changed
             }
         }
+        // Playlists der Collection per UUID: neue Reihenfolge des einen Knotens
+        for edit in job.playlistEdits {
+            guard let p = find(Array("<PLAYLISTS>".utf8), in: bytes) else { throw Failure.invalidResult("kein <PLAYLISTS>") }
+            let tail = String(decoding: bytes[p...], as: UTF8.self)
+            let patched = try patchCollectionPlaylist(tail, edit: edit, index: index)
+            if patched != tail { bytes.replaceSubrange(p..., with: Array(patched.utf8)) }
+            res.playlistsEdited.append(edit.uuid)
+        }
         // eigene Playlists (nur Tracks, die nach dem Schreiben in der Collection stehen)
         if let own = job.playlists {
             let inFile = known.union(added)
@@ -613,6 +699,10 @@ extension CollectionWriter {
             guard let f = new.root.children.first(where: { $0.kind == .folder && $0.name == ownFolder }), f.children.count == own.count else {
                 throw Failure.invalidResult("eigene Playlists nicht wieder lesbar")
             }
+        }
+        // Playlists der Collection: nur die geänderten Listen anders, alles andere Knoten für Knoten gleich
+        if !job.playlistEdits.isEmpty {
+            try validatePlaylists(old: old.root, new: new.root, edits: job.playlistEdits)
         }
     }
 }

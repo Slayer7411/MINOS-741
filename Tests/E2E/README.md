@@ -71,6 +71,12 @@ remote-debug channel are the unchanged app code.
 Without `MIX741_E2E_ROOT` none of this applies: `E2E.defaults` is `.standard`, the service is `_minos741._tcp`, the
 dial uses the Bonjour endpoint as before.
 
+Pairing has no code (`PairRendezvous`: X25519 with commit-then-reveal, six-digit comparison number). `pair-start`
+(optional `name`) starts it on both instances; the instance with the smaller name dials, so one connection carries the
+exchange. `snapshot` shows `body.pair.pairing.code` once both sides have revealed; `pair-confirm` confirms on that
+instance and replies with the code it shows. `pair-unpair` removes the stored key and drops the connection. The last
+pairing message is `body.pair.note` (`Paired with …`, `Not paired: …`, `Pairing rejected: …`, in the app language).
+
 Not isolated (known, see *Limitations*):
 - `~/Library/Preferences/com.github.slayer7411.minos741.e2e.*.plist`: the suite is a file in the user's Preferences
   folder. The runner deletes the suites it created (`defaults delete` + file removal) after each scenario. Only
@@ -116,6 +122,9 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `play` / `pause` | `deck` | `{deck, playing}`; idempotent |
 | `sync` | `deck`, `on` (default true) | `{deck, sync}` |
 | `master` | `deck` | `{deck, master}`: makes the deck the master (no-op if it already is) |
+| `pair-start` | `name` (optional): partner, default the first one found | `{pairing}` (true when started) |
+| `pair-confirm` | – | `{code}`: the comparison number shown here; confirms it |
+| `pair-unpair` | – | removes the pairing key and the connection |
 | `set-prefs` | JSON object, deep-merged into the app's preferences (same as `scripts/pairdebug.sh prefs-set`) | the merged preferences |
 | `prefs-get` | – | the preferences |
 | `status` | – | recent status messages |
@@ -123,6 +132,7 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 | `link` | optional `on` (true/false; absent: toggle) | `{linkEnabled}` (state before the change is applied on the next tick) |
 | `analyze` | `keys` (list), `timeout` (s, default 180) | `{results: [{key, bpm, musicalKey}]}` once all are analysed (`bpm`/`musicalKey` null if not stored); `{fehler}` after the timeout |
 | `add-to-playlist` | `playlist` (name of an own playlist; created if missing), `keys` | `{playlist, keys}` |
+| `collection-playlist-add` | `playlist` (name of a playlist of the collection file), `keys` | `{playlist, keys}`: the tracks go to the end of that playlist in `collection.nml` (backup first, needs `ui.writeCollection`, refused while the collection software runs); the write runs after the reply, so check the file with `file-check` after a `sleep` |
 | `mark-played` | `keys` | `{played}` (count); propagates to the paired instance |
 | `reset-played` | optional `keys` (all if absent) | `{played}` |
 | `shot` | `path` (PNG) | `{path, width, height}` of the main window (pixels) |
@@ -146,7 +156,7 @@ Track keys are NML keys (`E2E/:…/:music/:t01.wav`). Scenarios write them as `$
 
 `snapshot` body (keys used by the scenarios; the rest is the same as `scripts/pairdebug.sh snapshot`):
 
-- `name`, `build`, `pair` (`{on, writes, decks, connected, peer: {name, writes, decks}|null, service}`)
+- `name`, `build`, `pair` (`{on, writes, decks, connected, peer: {name, writes, decks}|null, service, paired, pairing: {peer, code}|null, seen, note}`)
 - `library`: `{tracks, playlists, smartlists, folders (all levels), collection (path), loaded}`
 - `browser`: array of two panes `{source, search, selection, rows}`
 - `decks`: array of four `{letter, visible, artist, title, key, path, trackBPM, bpm, pitchPct, ratePct, playing, sync, master, position, duration, keylock}`

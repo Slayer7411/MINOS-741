@@ -348,6 +348,8 @@ struct UIPrefs: Codable, Equatable {
     var crashReportFolder = ""
     /// Nach einem Absturz fragen: Sheet mit dem bereinigten Bericht beim nächsten Start (Standard an)
     var askAfterCrash = true
+    /// Bei LIVE die VST3-Plugins überbrücken (trocken, sie rechnen nicht; Absturzschutz, da sie im Prozess laufen). Standard an
+    var liveBypassVST3 = true
     /// Zeitpunkt des neuesten kopierten Absturzberichts (Sekunden seit 1970, 0 = noch keiner)
     var crashLastCopied = 0.0
     /// Zeitpunkt des neuesten Berichts, zu dem gefragt wurde (Sekunden seit 1970, 0 = noch keiner)

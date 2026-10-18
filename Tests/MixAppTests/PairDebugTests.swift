@@ -40,10 +40,10 @@ import MixCore
     #expect(o["token"] == nil)
 }
 
-@Test func pairSetupRemoteDebugDefaultsOnAndDecodesTolerant() throws {
-    #expect(PairSetup().remoteDebug)
+@Test func pairSetupRemoteDebugDefaultsOffAndDecodesTolerant() throws {
+    #expect(!PairSetup().remoteDebug)
     let old = try JSONDecoder().decode(PairSetup.self, from: Data(#"{"on":true,"writes":false,"decks":[1,3]}"#.utf8))
-    #expect(old.remoteDebug && old.on && !old.writes && old.decks == [1, 3])
-    let off = try JSONDecoder().decode(PairSetup.self, from: Data(#"{"remoteDebug":false}"#.utf8))
-    #expect(!off.remoteDebug)
+    #expect(!old.remoteDebug && old.on && !old.writes && old.decks == [1, 3])
+    let on = try JSONDecoder().decode(PairSetup.self, from: Data(#"{"remoteDebug":true}"#.utf8))
+    #expect(on.remoteDebug)
 }

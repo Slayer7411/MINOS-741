@@ -1678,7 +1678,8 @@
 "Antwort von TIDAL unlesbar" = "unreadable response from TIDAL";
 "Anmeldung abgelehnt (state stimmt nicht)" = "sign-in rejected (state mismatch)";
 "Anmeldung abgelehnt: %@" = "sign-in rejected: %@";
-"keine Anmeldung im Browser (Zeitlimit)" = "no sign-in in the browser (time limit)";
+"Anmeldung abgelaufen: keine Antwort aus dem Browser in 5 Min. – erneut ANMELDEN" = "sign-in timed out: no answer from the browser in 5 min – sign in again";
+"Port 7412 belegt: andere Anmeldung läuft noch" = "port 7412 in use: another sign-in is still running";
 "TIDAL" = "TIDAL";
 "Abmelden" = "Sign out";
 "angemeldet" = "signed in";
@@ -1916,6 +1917,10 @@
 "LIVE: kein Ruhezustand, kein Bildschirmschoner, Display bleibt an (gekoppelt: beide Macs)" = "LIVE: no sleep, no screen saver, display stays on (paired: both Macs)";
 "LIVE: kein Ruhezustand, kein Bildschirmschoner" = "LIVE: no sleep, no screen saver";
 "LIVE aus" = "LIVE off";
+"LIVE: VST3-Plugins überbrückt (Absturzschutz) – %@" = "LIVE: VST3 plugins bypassed (crash protection) – %@";
+"VST3 bei LIVE überbrücken" = "Bypass VST3 during LIVE";
+"Bei LIVE rechnen VST3-Plugins nicht mehr (Slot trocken): laufen im Prozess, ein Absturz risse MINOS-741 mit. Audio Units und eingebaute Effekte bleiben aktiv." = "During LIVE VST3 plugins do not process (slot dry): they run inside the app, a crash would take MINOS-741 down with it. Audio units and built-in effects stay active.";
+"Bei LIVE rechnen VST3-Plugins nicht mehr (Slot trocken): Absturzschutz, Audio Units bleiben aktiv" = "During LIVE VST3 plugins do not process (slot dry): crash protection, audio units stay active";
 "Zwei Macs: dieser Mac schreibt in Collection und History; an = der andere gibt ab" = "Two Macs: this Mac writes the collection and history; on = the other one stops";
 "Zwei Decks" = "Two decks";
 "Deck %@ spielt auf diesem Mac" = "Deck %@ plays on this Mac";
@@ -2189,3 +2194,28 @@
 "Der Datenordner liegt neben der Collection; Einstellungen und Verlauf bleiben dort." = "The data folder sits next to the collection; settings and history stay there.";
 "Ohne Automatik meldet MINOS-741 nur ein Update in der Statusleiste." = "Without automation MINOS-741 only reports an update in the status bar.";
 "misst je puffergröße (64 bis 1024), dann die empfehlung. lädt 4 tracks, hauptausgang stumm." = "measures each buffer size (64 to 1024), then the recommendation. loads 4 tracks, main output muted.";
+"Als eigene Playlist übernehmen" = "Take over as own playlist";
+"Bearbeiten … (als eigene Kopie)" = "Edit … (as own copy)";
+"Ordner der Collection (nur lesen)" = "Collection folder (read only)";
+"Playlist der Collection · Tracks hierher ziehen (wird in die Collection-Datei geschrieben)" = "Collection playlist · drag tracks here (written to the collection file)";
+"Smartlist der Collection · Regel: %@" = "Collection smartlist · rule: %@";
+"Smartlist – Tracks kommen über die Regel (Rechtsklick → Bearbeiten …)" = "Smartlist – tracks come from the rule (right-click → Edit …)";
+"Ordner der Collection – Tracks nur auf normale Playlists ziehen" = "Collection folder – drag tracks onto normal playlists only";
+"Playlist „%@“ nicht geändert: Schreiben in die Collection ist aus. Einstellungen → Collection → „Änderungen in die Collection-Datei schreiben“ einschalten." = "Playlist “%@” not changed: writing to the collection is off. Settings → Collection → turn on “Write changes to the collection file”.";
+"Playlist in der Collection nicht gefunden (Baum neu laden)" = "Playlist not found in the collection (reload the tree)";
+
+/* Zwei-Mac-Modus: Kopplung (Vergleichszahl, Festlegung, Trennen) */
+"Gekoppelt mit %@" = "Paired with %@";
+"Trennen" = "Unpair";
+"Mit %@ koppeln" = "Pair with %@";
+"Sucht den zweiten Mac …" = "Looking for the second Mac …";
+"Kopplung mit %@" = "Pairing with %@";
+"Gleiche Zahl auf beiden Macs?" = "Same number on both Macs?";
+"Warte auf den anderen Mac …" = "Waiting for the other Mac …";
+"Bestätigen" = "Confirm";
+"Nicht gekoppelt: %@" = "Not paired: %@";
+"Pairing abgelehnt: %@" = "Pairing rejected: %@";
+"Kopplung abgebrochen" = "Pairing cancelled";
+"Kopplung aufgehoben" = "Pairing removed";
+"unbekannt" = "unknown";
+"noch kein Code" = "no code yet";

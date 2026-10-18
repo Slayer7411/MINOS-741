@@ -21,30 +21,34 @@ public enum PairMessage: Codable, Equatable, Sendable {
 
     public static let version = 5
 
+    public func json() -> Data { (try? JSONEncoder().encode(self)) ?? Data() }
+
     public func line() -> Data {
-        var d = (try? JSONEncoder().encode(self)) ?? Data()
+        var d = json()
         d.append(0x0A)
         return d
     }
 }
 
+public enum PairLineMax {
+    public static let bytes = 16 << 20
+}
+
 /// zerlegt den TCP-Strom in Zeilen; unlesbare Zeilen fallen weg
-public struct PairLineReader: Sendable {
+public struct PairLineReader<Message: Decodable & Sendable>: Sendable {
     private var buffer = Data()
-    /// Schutz gegen einen Strom ohne Zeilenende
-    public static let maxLine = 16 << 20
 
     public init() {}
 
-    public mutating func feed(_ data: Data) -> [PairMessage] {
+    public mutating func feed(_ data: Data) -> [Message] {
         buffer.append(data)
-        var out: [PairMessage] = []
+        var out: [Message] = []
         while let i = buffer.firstIndex(of: 0x0A) {
             let line = buffer[buffer.startIndex..<i]
             buffer.removeSubrange(buffer.startIndex...i)
-            if let m = try? JSONDecoder().decode(PairMessage.self, from: line) { out.append(m) }
+            if let m = try? JSONDecoder().decode(Message.self, from: line) { out.append(m) }
         }
-        if buffer.count > Self.maxLine { buffer.removeAll() }
+        if buffer.count > PairLineMax.bytes { buffer.removeAll() }
         return out
     }
 }

@@ -2203,3 +2203,19 @@
 "Ordner der Collection – Tracks nur auf normale Playlists ziehen" = "Collection folder – drag tracks onto normal playlists only";
 "Playlist „%@“ nicht geändert: Schreiben in die Collection ist aus. Einstellungen → Collection → „Änderungen in die Collection-Datei schreiben“ einschalten." = "Playlist “%@” not changed: writing to the collection is off. Settings → Collection → turn on “Write changes to the collection file”.";
 "Playlist in der Collection nicht gefunden (Baum neu laden)" = "Playlist not found in the collection (reload the tree)";
+
+/* Zwei-Mac-Modus: Kopplung (Vergleichszahl, Festlegung, Trennen) */
+"Gekoppelt mit %@" = "Paired with %@";
+"Trennen" = "Unpair";
+"Mit %@ koppeln" = "Pair with %@";
+"Sucht den zweiten Mac …" = "Looking for the second Mac …";
+"Kopplung mit %@" = "Pairing with %@";
+"Gleiche Zahl auf beiden Macs?" = "Same number on both Macs?";
+"Warte auf den anderen Mac …" = "Waiting for the other Mac …";
+"Bestätigen" = "Confirm";
+"Nicht gekoppelt: %@" = "Not paired: %@";
+"Pairing abgelehnt: %@" = "Pairing rejected: %@";
+"Kopplung abgebrochen" = "Pairing cancelled";
+"Kopplung aufgehoben" = "Pairing removed";
+"unbekannt" = "unknown";
+"noch kein Code" = "no code yet";

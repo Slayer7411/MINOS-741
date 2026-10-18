@@ -1,18 +1,30 @@
 {
   "name": "pair-two-instances",
-  "description": "Zwei Instanzen paaren sich über das Netz (eigene Bonjour-Art); Gespielt-Markierung wandert in beide Richtungen",
+  "description": "Zwei Instanzen koppeln sich ohne Code (Vergleichszahl, X25519): beide zeigen dieselbe Zahl, beide bestätigen, dann verbunden; Gespielt-Markierung wandert in beide Richtungen; nach Entkoppeln auf B schlägt das Wiederverbinden mit „Not paired“ fehl",
   "instances": ["A", "B"],
   "steps": [
     {"who": "A", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": true, "decks": [0, 2], "remoteDebug": true}}},
      "expect": [{"path": "ok", "equals": true}]},
     {"who": "B", "do": "set-prefs", "args": {"ui": {"pair": {"on": true, "writes": false, "decks": [1, 3], "remoteDebug": true}}},
      "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "pair-start", "expect": [{"path": "ok", "equals": true}]},
+    {"who": "B", "do": "pair-start", "expect": [{"path": "ok", "equals": true}]},
+    {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "matches": "^[0-9]{6}$"}
+    ], "save": {"codeA": "body.pair.pairing.code"}},
+    {"who": "B", "do": "snapshot", "timeout": 90, "expect": [
+      {"path": "body.pair.pairing.code", "equals": "${codeA}"}
+    ], "save": {"codeB": "body.pair.pairing.code"}},
+    {"who": "A", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeB}"}]},
+    {"who": "B", "do": "pair-confirm", "expect": [{"path": "body.code", "equals": "${codeA}"}]},
     {"who": "A", "do": "snapshot", "timeout": 90, "expect": [
       {"path": "body.pair.connected", "equals": true},
+      {"path": "body.pair.paired", "equals": "${name:B}"},
       {"path": "body.pair.peer.name", "equals": "${name:B}"}
     ]},
     {"who": "B", "do": "snapshot", "timeout": 90, "expect": [
       {"path": "body.pair.connected", "equals": true},
+      {"path": "body.pair.paired", "equals": "${name:A}"},
       {"path": "body.pair.peer.name", "equals": "${name:A}"}
     ]},
     {"who": "A", "do": "mark-played", "args": {"keys": ["${key:t01.wav}"]}, "expect": [{"path": "body.played", "equals": 1}]},
@@ -24,6 +36,11 @@
     {"who": "A", "do": "snapshot", "timeout": 20, "expect": [
       {"path": "body.played.count", "equals": 2},
       {"path": "body.played.keys", "contains": "${key:t02.wav}"}
+    ]},
+    {"who": "B", "do": "pair-unpair", "expect": [{"path": "ok", "equals": true}]},
+    {"who": "B", "do": "snapshot", "timeout": 60, "expect": [
+      {"path": "body.pair.connected", "equals": false},
+      {"path": "body.pair.note", "matches": "(Not paired|Nicht gekoppelt)"}
     ]}
   ]
 }

@@ -54,6 +54,7 @@ struct LiveSyncSettings: View {
                     .settingsAnchor("decks.pairdecks")
                     Toggle("Fernzugriff zum Analysieren erlauben", isOn: $mix.prefs.ui.pair.remoteDebug)
                         .settingsAnchor("decks.pairdebug")
+                    PairingRows()
                 }
                 Text("zwei macs als eine session: jeder mac spielt seine decks, takt über link. genau ein mac schreibt in collection und history.")
                     .settingsHint()

@@ -387,7 +387,7 @@ final class PairLink {
 fileprivate final class PairConn {
     let nw: NWConnection
     let dialed: String?
-    var reader = PairLineReader()
+    var reader = PairLineReader<PairMessage>()
     /// Nachrichten vor der Aktivierung
     var pending: [PairMessage] = []
 

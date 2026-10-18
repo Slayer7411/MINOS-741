@@ -12,7 +12,7 @@ import Testing
     ]
     var stream = Data()
     for m in msgs { stream.append(m.line()) }
-    var r = PairLineReader()
+    var r = PairLineReader<PairMessage>()
     var got: [PairMessage] = []
     var i = stream.startIndex
     while i < stream.endIndex {
@@ -24,7 +24,7 @@ import Testing
 }
 
 @Test func pairReaderSkipsBrokenLines() {
-    var r = PairLineReader()
+    var r = PairLineReader<PairMessage>()
     var d = Data("kaputt\n".utf8)
     d.append(PairMessage.played(add: ["k"], remove: []).line())
     #expect(r.feed(d) == [.played(add: ["k"], remove: [])])
@@ -48,14 +48,14 @@ import Testing
     ]
     var stream = Data()
     for m in msgs { stream.append(m.line()) }
-    var r = PairLineReader()
+    var r = PairLineReader<PairMessage>()
     #expect(r.feed(stream) == msgs)
     #expect(PairMessage.version == 5)
 }
 
 @Test func pairClockMessageRoundTrip() {
     let msgs: [PairMessage] = [.clock(playingMaster: true, leader: false), .clock(playingMaster: false, leader: true)]
-    var r = PairLineReader()
+    var r = PairLineReader<PairMessage>()
     var stream = Data()
     for m in msgs { stream.append(m.line()) }
     #expect(r.feed(stream) == msgs)

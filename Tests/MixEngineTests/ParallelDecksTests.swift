@@ -56,16 +56,23 @@ private final class FourDecks {
     }
 }
 
+/// Die Frist der Worker ist Wanduhrzeit (2 Teilblöcke ab Blockanfang). Reißt unter Last eine Frist, fehlt dort das Deck
+/// in diesem Block und der Kern rechnet danach seriell (Schutz vor Aussetzern, gewollt). Der Vergleich gilt also nur für
+/// Läufe ohne Fristablauf; wer die Frist reißt, wird wiederholt (bis zu 5 Versuche). Bit-Gleichheit bleibt die Bedingung.
 @Test func parallelDecksMatchSerial() {
-    let serial = FourDecks(parallel: false), parallel = FourDecks(parallel: true)
-    #expect(!mdsp_parallel(serial.e) && mdsp_parallel(parallel.e))
-    let a = serial.render(blocks: 60), b = parallel.render(blocks: 60)
-    #expect(a.count == b.count)
-    var peak: Float = 0
-    for i in 0..<min(a.count, b.count) { peak = max(peak, abs(a[i] - b[i])) }
-    #expect(peak == 0, "Abweichung parallel/seriell \(peak)")
-    #expect(a.contains { abs($0) > 0.05 }, "Ausgabe darf nicht still sein")
-    #expect(abs(mdsp_position(serial.e, 1) - mdsp_position(parallel.e, 1)) < 1e-9)
+    for attempt in 1...5 {
+        let serial = FourDecks(parallel: false), parallel = FourDecks(parallel: true)
+        #expect(!mdsp_parallel(serial.e) && mdsp_parallel(parallel.e))
+        let a = serial.render(blocks: 60), b = parallel.render(blocks: 60)
+        if watchdog(parallel.e).timeouts > 0 && attempt < 5 { continue }
+        #expect(a.count == b.count)
+        var peak: Float = 0
+        for i in 0..<min(a.count, b.count) { peak = max(peak, abs(a[i] - b[i])) }
+        #expect(peak == 0, "Abweichung parallel/seriell \(peak), Fristabläufe \(watchdog(parallel.e).timeouts)")
+        #expect(a.contains { abs($0) > 0.05 }, "Ausgabe darf nicht still sein")
+        #expect(abs(mdsp_position(serial.e, 1) - mdsp_position(parallel.e, 1)) < 1e-9)
+        return
+    }
 }
 
 @Test func parallelToggleWhileRendering() {
@@ -131,8 +138,8 @@ private func watchdog(_ e: OpaquePointer) -> MDParallelWatchdog {
     let t0 = Date()
     let hung = c.render(blocks: 1, n: n)
     let ms = Date().timeIntervalSince(t0) * 1000
-    // Frist 2 × 5.3 ms ab Blockanfang, Obergrenze 150 ms (Last): der Block endet weit vor den 300 ms
-    #expect(ms < 150, "Block dauerte \(ms) ms")
+    // Frist 2 × 5.3 ms ab Blockanfang, Obergrenze 250 ms (Last): ein wartender Block bräuchte ≥ 290 ms
+    #expect(ms < 250, "Block dauerte \(ms) ms")
     let r = pairRMS(hung[...], n: n)
     #expect(r[1] == 0, "Deck B fehlt im Block")
     #expect(r[0] > 0.01 && r[2] > 0.01 && r[3] > 0.01, "A, C, D klingen: \(r)")

@@ -322,8 +322,10 @@ final class E2EControl {
             guard let e = CollectionBackups.list(in: dir).first(where: { $0.id == (a["name"] as? String ?? "") }) else {
                 return done(false, "Sicherung fehlt")
             }
-            let r = CollectionRestore.run(e.url, store: store)
-            done(r.ok, ["message": r.message, "tracks": r.tracks ?? -1])
+            Task { @MainActor in
+                let r = await CollectionRestore.run(e.url, store: store)
+                done(r.ok, ["message": r.message, "tracks": r.tracks ?? -1])
+            }
 
         case "drag":
             done(false, "nicht verdrahtet: Ziehen läuft über Fenster-Ereignisse (NSDraggingInfo); "

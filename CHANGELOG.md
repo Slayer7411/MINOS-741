@@ -26,7 +26,8 @@ codenames: every major version is named after a circle of hell (minos judges the
 
 ### fixed
 * collection file: writes are durable (temp file synced with F_FULLFSYNC before the rename, folder synced after it), so a crash or power loss cannot leave an empty collection; file permissions of the original are kept
-* collection file: writes are serialised by an advisory lock on `.collection.nml.minos-lock` next to the collection (5 s wait, then a clear error instead of a lost update); the lock does not stop the other DJ program
+* collection file: writes are serialised by an advisory lock in `~/Library/Application Support/MINOS-741/locks` (not in the collection folder; 5 s wait, then a clear error instead of a lost update); the lock does not stop the other DJ program
+* collection file: restoring a backup runs off the main thread (progress shown, the window stays responsive)
 * collection file: a change by the other program between reading and replacing is detected right before the replace; MINOS reloads and re-applies its changes instead of overwriting them
 * collection file: failures that were swallowed now reach the status line: cleanup of old backups, the conflict backups (`metadata-konflikt.json`, `edits-konflikt.json`, which no longer overwrite an unreadable older file), and the comparison before a restore
 * audio: switching or reopening the output device no longer blocks the UI (up to ~0.5 s); the status line shows `Öffne Audio-Gerät …` until it is open

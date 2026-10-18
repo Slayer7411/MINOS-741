@@ -24,8 +24,14 @@ public enum PairMessage: Codable, Equatable, Sendable {
     case lead(lamport: Int, holder: String)
     /// Modus dieses Macs für die Verbindung (vor allem anderen): wirksam ist der strengere der beiden
     case mode(PairMode)
+    /// B2B-Gruppe: Takt der Führung `holder` (Tempo, Beat, der zur Host-Zeit `hostMicros` des Absenders hörbar ist).
+    /// `path` = Macs, über die die Nachricht lief (Weiterleitung über Zwischenstationen, ohne Schleifen)
+    case pairClock(holder: String, bpm: Double, beat: Double, hostMicros: Int64, path: [String])
+    /// Uhrenabgleich: Ping mit Sendezeit `t0`, Pong mit `t0` zurück, Empfang `t1` und Antwort `t2` des Empfängers (Mikrosekunden)
+    case ping(t0: Int64)
+    case pong(t0: Int64, t1: Int64, t2: Int64)
 
-    public static let version = 6
+    public static let version = 7
 
     public func json() -> Data { (try? JSONEncoder().encode(self)) ?? Data() }
 

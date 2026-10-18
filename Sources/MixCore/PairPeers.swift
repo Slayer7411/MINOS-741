@@ -121,7 +121,7 @@ public enum PairFilter {
         case .session: return true
         case .b2b:
             switch m {
-            case .hello, .clock, .tempo, .lead, .mode: return true
+            case .hello, .clock, .tempo, .lead, .mode, .pairClock, .ping, .pong: return true
             default: return false
             }
         }

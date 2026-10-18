@@ -197,6 +197,9 @@ public struct MixState: Equatable, Sendable {
     public var linkFollow = false
     /// Folgen gerade aktiv (Link-Teilnehmer da; der Steuertick setzt es)
     public var linkFollowing = false
+    /// Takt über den Zwei-Mac-Kanal folgen (B2B-Folger; Link folgt dann nicht)
+    public var pairFollow = false
+    public var pairFollowing = false
     public var crossfader: Double = 0
     public var masterVolume: Double = 0.85
     public var externalMixer = false
@@ -215,7 +218,7 @@ public struct MixState: Equatable, Sendable {
     public init() {}
 
     /// Die Clock ist Takt-Master für gesyncte Decks (CLOCK-Modus oder Link-Folgen); ein Master-Deck bleibt für die Anzeige
-    public var clockIsMaster: Bool { clockMaster || linkFollowing }
+    public var clockIsMaster: Bool { clockMaster || linkFollowing || pairFollowing }
 
     /// Tempo, dem gesyncte Decks folgen (Clock oder Master-Deck)
     public var masterTempo: Double {
@@ -1665,6 +1668,19 @@ public final class MixController: @unchecked Sendable {
     public func setLinkEnabled(_ on: Bool) { locked { state.linkEnabled = on; link.enabled = on } }
     /// Link folgen (Zwei-Mac-Modus, der andere Mac führt Link): Tempo und Takt kommen von Link, nicht von MINOS
     public func setLinkFollow(_ on: Bool) { locked { state.linkFollow = on } }
+    /// Takt über den Zwei-Mac-Kanal (B2B-Folger): Tempo und Phase kommen von `pairClock`, Link folgt nicht
+    public func setPairFollow(_ on: Bool) { locked { state.pairFollow = on } }
+    /// Takt der Führung angekommen (Host-Zeit `atMicros` auf dieser Uhr)
+    public func acceptPairClock(bpm: Double, beat: Double, atMicros: Int64) { pairClock.accept(bpm: bpm, beat: beat, atMicros: atMicros) }
+    /// Tempo und Beat der Führung zur Host-Zeit (nil ohne frische Nachricht)
+    public func pairSample(atMicros micros: Int64) -> (bpm: Double, beat: Double)? { pairClock.sample(atMicros: micros) }
+    /// Tempo und Beat dieser Clock mit Host-Zeit (Takt-Nachricht als Führung)
+    public func clockSnapshot() -> (bpm: Double, beat: Double, micros: Int64)? {
+        locked {
+            guard let st = engine.clockStamp else { return nil }
+            return (state.clockBPM, st.beat, LinkSession.micros(hostTicks: st.hostTime))
+        }
+    }
     /// Phasenabstand der Clock zu Link in Beats und Teilnehmer (Messung; auf der Steuer-Queue wie `lead`)
     public func linkPhase() -> (error: Double, peers: Int)? {
         controlQueue.sync {
@@ -1686,9 +1702,12 @@ public final class MixController: @unchecked Sendable {
 
     /// Link – MINOS gibt Tempo und Takt vor
     public let link = LinkSession()
+    /// Takt der Führung über den Zwei-Mac-Kanal (Quelle für B2B-Folger)
+    public let pairClock = PairClockFollower()
     private var linkTicks = 0
     /// Link folgen beim letzten Steuertick (Wechsel setzt die Nachführung neu)
     private var linkWasFollowing = false
+    private var pairWasFollowing = false
     /// Takt-Versatz der Clock zum Master-Deck: Zähler gleicher Werte (Ticks à 5 ms) und letzter Wert
     private var clockBarTicks = 0, clockBarLast = 0.0
 
@@ -2558,10 +2577,16 @@ public final class MixController: @unchecked Sendable {
         let handlers: [(MixController) -> Void] = locked {
             state.autoMaster = state.effectiveMaster   // Auto-Master klebt am laufenden Deck
             let master = state.effectiveMaster
-            // Link folgen: nur mit Link-Teilnehmern (die Pair-Verbindung setzt linkFollow); sonst führt MINOS wie bisher
-            let following = state.linkEnabled && state.linkFollow && link.peers > 0
-            state.linkFollowing = following
-            if following != linkWasFollowing { linkWasFollowing = following; link.resetPolicies() }
+            // Folgen: B2B über den Zwei-Mac-Kanal (Link bleibt aus), sonst Link mit Teilnehmern (Session-Partner);
+            // sonst führt MINOS wie bisher
+            let pairOn = state.pairFollow
+            let linkOn = !pairOn && state.linkEnabled && state.linkFollow && link.peers > 0
+            state.linkFollowing = linkOn
+            state.pairFollowing = pairOn
+            var source: TempoFollowSource? = nil
+            if pairOn { source = pairClock } else if linkOn { source = link }
+            if linkOn != linkWasFollowing { linkWasFollowing = linkOn; link.resetPolicies() }
+            if pairOn != pairWasFollowing { pairWasFollowing = pairOn; pairClock.resetPolicies() }
             for d in state.decks.indices {
                 let p = engine.player(d)
                 if state.decks[d].playing != p.playing, !state.decks[d].cueHeld {
@@ -2618,24 +2643,28 @@ public final class MixController: @unchecked Sendable {
             }
             // Link: Tempo und Beat der Clock vorgeben, Teilnehmer zählen. Läuft die Clock frei, zieht MINOS kleine
             // Abweichungen an der eigenen Clock nach (Link-Zeitachse bleibt für die Teilnehmer ruhig)
-            if state.linkEnabled {
-                if let st = engine.clockStamp {
-                    link.offsetMicros = Int64(state.prefs.linkOffsetMs * 1000)
-                    if following {
-                        // Folgen: Tempo und Takt von Link, Link selbst bleibt unberührt
-                        if let f = link.follow(beat: st.beat, hostTime: st.hostTime) {
-                            if f.bpm > 0, abs(f.bpm - state.clockBPM) > 0.0005 { state.clockBPM = f.bpm; engine.setClockBPM(f.bpm) }
-                            switch f.action {
-                            case .trim(let d): engine.trimClock(-d)
-                            case .jump(let d): jumpClock(to: engine.clockBeat - d); clockBarTicks = 0
-                            case .none: break
-                            }
-                        }
-                    } else if case .trim(let d) = link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime, canTrim: !clockOnDeck) {
+            if let st = engine.clockStamp {
+                link.offsetMicros = Int64(state.prefs.linkOffsetMs * 1000)
+                if let src = source, let f = src.follow(beat: st.beat, hostTime: st.hostTime) {
+                    // Folgen: Tempo und Takt von der Quelle (Link oder Takt-Kanal); die Quelle selbst bleibt unberührt
+                    if f.bpm > 0, abs(f.bpm - state.clockBPM) > 0.0005 { state.clockBPM = f.bpm; engine.setClockBPM(f.bpm) }
+                    switch f.action {
+                    case .trim(let d): engine.trimClock(-d)
+                    case .jump(let d): jumpClock(to: engine.clockBeat - d); clockBarTicks = 0
+                    case .none: break
+                    }
+                }
+                if state.linkEnabled {
+                    // Link als Ausgang (z. B. DAW am selben Mac): folgt MINOS dem Takt-Kanal, setzt MINOS Link nur,
+                    // verschiebt aber nie die Clock (canTrim aus)
+                    if !linkOn, case .trim(let d) = link.lead(bpm: state.clockBPM, beat: st.beat, hostTime: st.hostTime,
+                                                              canTrim: source == nil && !clockOnDeck) {
                         engine.trimClock(-d)
                     }
                     if link.stats.forces != state.linkForces { state.linkForces = link.stats.forces }
                 }
+            }
+            if state.linkEnabled {
                 linkTicks += 1
                 if linkTicks % 100 == 0 { let n = link.peers; if n != state.linkPeers { state.linkPeers = n } }
             } else if state.linkPeers != 0 || state.linkForces != 0 { state.linkPeers = 0; state.linkForces = 0 }

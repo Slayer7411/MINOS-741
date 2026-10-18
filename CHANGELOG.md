@@ -21,6 +21,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 
 ### fixed
 * updates: release downloads redirected to `release-assets.githubusercontent.com` were refused silently (check found nothing). redirect target allowed, https only. `Jetzt prüfen` shows every outcome with its reason; automatic failures go to the status log after the first one
+* fx golden test `fxPluginSlotBitIdenticalToOldChain` passes again: its hash was not updated with the glide snap (9f8fd46). the plugin slot output differs from the old chain only where the deck volume glide snaps to its target (from block 9, max 4.99e-5 relative); hash `0x6f8a07943193ddbf`
 
 ## ◆ [0.8.2] · 2026-10-17 · LIMBUS · TWO MACS
 

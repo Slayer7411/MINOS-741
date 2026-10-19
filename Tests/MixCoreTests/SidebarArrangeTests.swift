@@ -67,3 +67,54 @@ import Testing
     #expect(b.order["m:"] == ["x"])
     #expect(b.marks == ["o:2": .blue])
 }
+
+@Test func sidebarSectionOrderNaturalWithoutSavedKey() {
+    #expect(SidebarArrange().sectionOrder() == [.collection, .folders, .explorer, .playlists])
+    // alte Einstellungen mit anderen Ebenen, aber ohne „root“: natürliche Reihenfolge
+    let old = #"{"order": {"m:": ["x"], "c:": ["cu:1"]}}"#
+    let a = try! JSONDecoder().decode(SidebarArrange.self, from: Data(old.utf8))
+    #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
+}
+
+@Test func sidebarSectionOrderSavedFirstNewAfterRemovedIgnored() {
+    var a = SidebarArrange()
+    // gespeichert: playlists, ein entfernter Abschnitt, collection; folders und explorer sind neu (natürlich danach)
+    a.order[SidebarArrange.sectionGroup] = ["playlists", "gone", "collection"]
+    #expect(a.sectionOrder() == [.playlists, .collection, .folders, .explorer])
+    // nur ein Abschnitt gespeichert: die übrigen in natürlicher Reihenfolge dahinter
+    a.order[SidebarArrange.sectionGroup] = ["folders"]
+    #expect(a.sectionOrder() == [.folders, .collection, .explorer, .playlists])
+    // alle Schlüssel unbekannt: natürliche Reihenfolge
+    a.order[SidebarArrange.sectionGroup] = ["x", "y"]
+    #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
+}
+
+@Test func sidebarSectionMoveAndReset() {
+    var a = SidebarArrange()
+    a.setMark(.blue, for: "mf:/Musik")
+    a.order["m:"] = ["mf:/Musik"]
+    a.moveSection(.playlists, before: .collection)
+    #expect(a.sectionOrder() == [.playlists, .collection, .folders, .explorer])
+    // ans Ende ohne Ziel
+    a.moveSection(.playlists, before: nil)
+    #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
+    // Abschnitt vor sich selbst: keine Änderung der Reihenfolge
+    a.moveSection(.explorer, before: .explorer)
+    #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
+
+    a.moveSection(.explorer, before: .collection)
+    a.resetSectionOrder()
+    #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
+    // andere Ebenen und Farben bleiben
+    #expect(a.order["m:"] == ["mf:/Musik"])
+    #expect(a.mark("mf:/Musik") == .blue)
+}
+
+@Test func sidebarSectionOrderRoundTrip() throws {
+    var a = SidebarArrange()
+    a.moveSection(.explorer, before: .folders)
+    let data = try JSONEncoder().encode(a)
+    let b = try JSONDecoder().decode(SidebarArrange.self, from: data)
+    #expect(b == a)
+    #expect(b.sectionOrder() == [.collection, .explorer, .folders, .playlists])
+}

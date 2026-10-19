@@ -293,9 +293,16 @@ struct PlaylistsSection: View, SourceMenus {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(ui.rootTargeted ? Theme.chitinRaised : .clear)
-                .contextMenu { PlaylistNewMenu(parent: nil, selection: $selection) }
+                // Kopf ziehbar zum Umordnen der Abschnitte; die Ablage unten nimmt beides an
+                .sectionDrag(ui, .playlists)
+                .contextMenu {
+                    PlaylistNewMenu(parent: nil, selection: $selection)
+                    Divider()
+                    SectionResetButton(ui: ui)
+                }
                 .treeDropZone(ui.regions, name: "tree drop", highlight: { ui.rootTargeted = $0 },
-                              accepts: { $0.contains { TreeDrag.item($0) != nil || TrackDrag.key($0) != nil } }) { strings in
+                              accepts: { $0.contains { TreeDrag.item($0) != nil || TrackDrag.key($0) != nil } || SidebarSection.carries($0) }) { strings in
+                    if ui.reorderSection(strings, before: .playlists) { return true }
                     if let id = strings.compactMap(TreeDrag.item).first {
                         store.editPlaylists(String(localized: "Verschieben")) { $0.move(id, into: nil) }
                         return true

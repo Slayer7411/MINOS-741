@@ -45,6 +45,31 @@ public struct SidebarArrange: Equatable, Sendable {
     }
 }
 
+/// Abschnitte oben in der Seitenleiste (Collection, MUSIC FOLDERS, EXPLORER, PLAYLISTS); Schlüssel = Rohwert, stabil
+public enum SidebarSection: String, CaseIterable, Sendable {
+    case collection, folders, explorer, playlists
+}
+
+extension SidebarArrange {
+    /// Ebene der Abschnitte oben (eigener Schlüssel in `order`; fehlt er in alten Einstellungen: natürliche Reihenfolge)
+    public static let sectionGroup = "root"
+
+    /// Abschnitte in Anzeigeordnung: gespeicherte zuerst, neue danach in ihrer natürlichen Reihenfolge
+    public func sectionOrder() -> [SidebarSection] {
+        sorted(Self.sectionGroup, SidebarSection.allCases.map(\.rawValue)).compactMap(SidebarSection.init(rawValue:))
+    }
+
+    /// Abschnitt `s` vor `target` setzen (nil: ans Ende)
+    public mutating func moveSection(_ s: SidebarSection, before target: SidebarSection?) {
+        move(s.rawValue, before: target?.rawValue, in: Self.sectionGroup, ids: SidebarSection.allCases.map(\.rawValue))
+    }
+
+    /// Reihenfolge der Abschnitte auf die natürliche zurücksetzen (Farben und andere Ebenen bleiben)
+    public mutating func resetSectionOrder() {
+        order[Self.sectionGroup] = nil
+    }
+}
+
 extension SidebarArrange: Codable {
     private enum CodingKeys: String, CodingKey { case order, marks }
 

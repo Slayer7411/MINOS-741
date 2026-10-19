@@ -850,10 +850,10 @@ struct SourceTree: View {
         // Markiert ist immer die Quelle; ⌘ / ⇧ Klick nimmt Einträge dazu oder weg (Menü „Reset Played State“ gilt für alle)
         List(selection: Binding<Set<BrowserSource>>(get: { treeUI.marked.contains(selection) ? treeUI.marked : [selection] },
                                                     set: { pick($0) })) {
-            SourceTreeFixed()
-            MusicFolderTree(selection: $selection)
-            ExplorerTree(selection: $selection)
-            PlaylistsSection(selection: $selection)
+            // Abschnitte oben in der gespeicherten Reihenfolge (Kopf ziehen, siehe `sectionHeader`)
+            ForEach(treeUI.sections, id: \.self) { s in
+                section(s)
+            }
         }
         .listStyle(.sidebar)
         .background(TreeDropHook(regions: treeUI.regions))   // Ablage aus Tabelle und Baum: vor der Liste, nur während eines Zugs   // Ablage aus Tabelle und Baum: vor der Liste, nur während eines Zugs
@@ -868,6 +868,15 @@ struct SourceTree: View {
             treeUI.persist = { [mix] a in mix.prefs.ui.sidebar = a }
         }
         .onChange(of: mix.prefs.ui.sidebar) { _, new in treeUI.arrange = new }
+    }
+
+    @ViewBuilder private func section(_ s: SidebarSection) -> some View {
+        switch s {
+        case .collection: SourceTreeFixed()
+        case .folders: MusicFolderTree(selection: $selection)
+        case .explorer: ExplorerTree(selection: $selection)
+        case .playlists: PlaylistsSection(selection: $selection)
+        }
     }
 
     /// Auswahl aus der Liste übernehmen: ein Eintrag = die Quelle; bei mehreren nimmt die Quelle den neu dazugekommenen
@@ -899,7 +908,8 @@ struct SourceTreeFixed: View, SourceMenus {
 
     var body: some View {
         row("≣", "TRACK COLLECTION").tag(BrowserSource.collection).helpInfo("tree.collection")
-            .favoriteDrag { BrowserFavorite.source(.collection, store: store) }
+            // Kopf des Abschnitts: ziehen zum Umordnen der Abschnitte, auf Favoriten-Platz (wie zuvor)
+            .sectionHeader(ui, .collection) { BrowserFavorite.source(.collection, store: store) }
             .contextMenu {
                 exportMenu(.collection)
                 Button("Collection prüfen …") { ConsistencyWindow.show(store: store) }
@@ -911,6 +921,8 @@ struct SourceTreeFixed: View, SourceMenus {
                 ImportMenuButton(source: "Track Collection") { store.tracks }
                 KeyProfileMenuButtons { store.tracks }
                 CloudMenuButton(label: "Track Collection") { store.tracks }
+                Divider()
+                SectionResetButton(ui: ui)
             }
         row("▶", "RUNNING TRACKS").tag(BrowserSource.running)
             .favoriteDrag { BrowserFavorite.source(.running, store: store) }

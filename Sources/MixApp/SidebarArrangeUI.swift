@@ -74,6 +74,23 @@ extension View {
         }
     }
 
+    /// Kopf eines Abschnitts oben (Collection, MUSIC FOLDERS, EXPLORER): ziehbar und Ziel zum Umordnen der Abschnitte
+    /// (Ebene „root“). PLAYLISTS hat eigene Ablage (Baum-Züge) und setzt die Umordnung selbst dazu
+    func sectionHeader(_ ui: PlaylistTreeUI, _ s: SidebarSection, favorite: @escaping @MainActor () -> BrowserFavorite? = { nil }) -> some View {
+        sectionDrag(ui, s, favorite: favorite)
+            .treeDropZone(ui.regions, name: "section \(s.rawValue)", highlight: { on in
+                ui.sidebarTarget = on ? s.rawValue : (ui.sidebarTarget == s.rawValue ? nil : ui.sidebarTarget)
+            }, accepts: { SidebarSection.carries($0) }) { strings in
+                ui.reorderSection(strings, before: s)
+            }
+    }
+
+    /// Kopf eines Abschnitts ziehbar (zum Umordnen der Abschnitte) und markiert, solange ein Zug darauf zeigt
+    func sectionDrag(_ ui: PlaylistTreeUI, _ s: SidebarSection, favorite: @escaping @MainActor () -> BrowserFavorite? = { nil }) -> some View {
+        sidebarDrag(group: SidebarArrange.sectionGroup, key: s.rawValue, favorite: favorite)
+            .background(ui.sidebarTarget == s.rawValue ? Theme.chitinRaised : .clear)
+    }
+
     /// Farbmarke als schmaler Balken am linken Rand der Zeile
     func sidebarMark(_ ui: PlaylistTreeUI, _ key: String) -> some View {
         overlay(alignment: .leading) {
@@ -82,10 +99,40 @@ extension View {
     }
 }
 
+extension SidebarSection {
+    /// Zug trägt einen Abschnitt (Umordnen der Abschnitte oben)
+    static func carries(_ strings: [String]) -> Bool {
+        strings.contains { SidebarDrag.item($0)?.group == SidebarArrange.sectionGroup }
+    }
+}
+
 extension PlaylistTreeUI {
     /// Ordner (Pfade) einer Ebene in Anzeigeordnung
     func folders(_ paths: [String], group: String) -> [String] {
         arrange.sorted(group, paths.map(SidebarKey.folder)).map(SidebarKey.folderPath)
+    }
+
+    /// Abschnitte oben in Anzeigeordnung
+    var sections: [SidebarSection] { arrange.sectionOrder() }
+
+    /// Abschnitt vor `target` ziehen (nur Abschnitte; sonst false)
+    func reorderSection(_ strings: [String], before target: SidebarSection) -> Bool {
+        reorder(strings, before: target.rawValue, group: SidebarArrange.sectionGroup, ids: SidebarSection.allCases.map(\.rawValue))
+    }
+
+    func resetSectionOrder() {
+        var a = arrange
+        a.resetSectionOrder()
+        commit(a)
+    }
+}
+
+/// Menüpunkt „Reihenfolge zurücksetzen“ an einem Abschnitt oben
+struct SectionResetButton: View {
+    let ui: PlaylistTreeUI
+
+    var body: some View {
+        Button("Reihenfolge zurücksetzen") { ui.resetSectionOrder() }
     }
 }
 

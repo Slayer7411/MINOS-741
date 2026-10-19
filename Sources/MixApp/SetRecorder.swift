@@ -84,6 +84,8 @@ final class SetRecorder {
     @ObservationIgnored private var listTimer: Timer?
     @ObservationIgnored private var playingAtStart: Set<String> = []
     @ObservationIgnored private var stopping = false
+    /// Ordner und Dateiname werden im Hintergrund vorbereitet (Start läuft danach)
+    @ObservationIgnored private(set) var preparing = false
 
     init() {
         input.onEvent = { [weak self] e in
@@ -113,7 +115,7 @@ final class SetRecorder {
 
     /// Aufnahme starten; Fehler -> Statuszeile, keine Aufnahme
     func start() {
-        guard let mix, !recording, !stopping else { return }
+        guard let mix, !recording, !stopping, !preparing else { return }
         let src = testSource ?? source(mix)
         if src == .input {
             // erst das Gerät (ohne Gerät keine Rückfrage nach dem Zugriff), dann der Zugriff auf Eingänge
@@ -132,12 +134,32 @@ final class SetRecorder {
                 return
             }
         }
-        do { try begin(mix, src) } catch { fail(error.localizedDescription) }
+        let now = Date()
+        let folder = folderOverride ?? mix.prefs.record.folderURL
+        let ext = mix.prefs.record.format.ext
+        // Ordner anlegen und freien Namen suchen im Hintergrund (ein Cloud-Ordner kann dabei hängen), dann beginnen
+        preparing = true
+        Task {
+            do {
+                let stem = try await Task.detached { try SetRecorder.freeStem(folder, now, ext: ext) }.value
+                self.preparing = false
+                try self.begin(mix, src, now: now, stem: stem)
+            } catch {
+                self.preparing = false
+                self.fail(error.localizedDescription)
+            }
+        }
+    }
+
+    /// freier Stamm im Ordner (legt ihn an); nie auf dem Hauptthread aufrufen
+    nonisolated static func freeStem(_ folder: URL, _ now: Date, ext: String) throws -> String {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        return RecordingName.free(now, ext: ext) { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
     }
 
     private struct Failure: LocalizedError { let errorDescription: String? }
 
-    private func begin(_ mix: MixModel, _ src: RecordSource) throws {
+    private func begin(_ mix: MixModel, _ src: RecordSource, now: Date, stem: String) throws {
         let prefs = mix.prefs.record
         let ring: RecordRing, rate: Double, act: Active
         if src == .master {
@@ -158,9 +180,6 @@ final class SetRecorder {
             }
         }
         let folder = folderOverride ?? prefs.folderURL
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let now = Date()
-        let stem = RecordingName.free(now, ext: prefs.format.ext) { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
         let file = folder.appendingPathComponent(stem + "." + prefs.format.ext)
         let s: RecordSink
         do { s = try RecordSink(ring: ring, url: file, kind: prefs.format, sampleRate: rate) } catch {

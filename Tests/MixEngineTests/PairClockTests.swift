@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+@testable import MixCore
 @testable import MixEngine
 
 /// Gleichförmige Zufallszahl 0…1 (fest gesät, reproduzierbar)
@@ -88,4 +89,31 @@ private struct Jitter {
     }
     #expect(abs(lastBPM - leaderBPM) < 0.001, "Tempo springt nicht: \(lastBPM)")
     #expect(ownBeat.isFinite)
+}
+
+@Test func pairClockTakeoverKeepsTempo() {
+    // Führung 126 BPM, dann ausgeblieben. Nach der Übernahme-Frist (3 s) hat der Nachfolger noch dasselbe Tempo:
+    // seine Clock läuft mit dem zuletzt gefolgten Tempo weiter, kein Sprung
+    let follower = PairClockFollower()
+    let leaderBPM = 126.0, dt = 0.005, lost = 5.0
+    var ownBPM = 120.0, ownBeat = 0.0
+    var bpmAtTakeover = 0.0
+    for k in 0..<2_400 {                               // 12 s
+        let t = Double(k) * dt
+        if t < lost, k % 10 == 0 {
+            follower.accept(bpm: leaderBPM, beat: 2.0 + leaderBPM / 60 * t, atMicros: Int64(t * 1_000_000))
+        }
+        ownBeat += ownBPM / 60 * dt
+        if let f = follower.follow(beat: ownBeat, hostTime: LinkSession.hostTicks(seconds: t)) {
+            if abs(f.bpm - ownBPM) > 0.0005 { ownBPM = f.bpm }
+            switch f.action {
+            case .none: break
+            case .trim(let d), .jump(let d): ownBeat -= d
+            }
+        }
+        if abs(t - (lost + 3.5)) < dt / 2 { bpmAtTakeover = ownBPM }
+    }
+    #expect(PairTakeover.due(silentMicros: 3_500_000))
+    #expect(abs(bpmAtTakeover - leaderBPM) < 0.001, "Tempo beim Übernehmen: \(bpmAtTakeover)")
+    #expect(abs(ownBPM - leaderBPM) < 0.001)
 }

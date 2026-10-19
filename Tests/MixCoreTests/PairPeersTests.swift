@@ -117,3 +117,56 @@ import Testing
     #expect(PairMode.effective(.session, .off) == .off)
     #expect(PairFilter.allows(.mode(.session), mode: .b2b))
 }
+
+@Test func pairTakeoverWaitsForGrace() {
+    // kurzer WLAN-Aussetzer (unter der Frist) löst keinen Wechsel aus
+    #expect(!PairTakeover.due(silentMicros: 2_000_000))
+    #expect(!PairTakeover.due(silentMicros: PairTakeover.graceMicros))
+    #expect(PairTakeover.due(silentMicros: 3_500_000))
+}
+
+@Test func pairTakeoverAllMembersAgreeOnSuccessor() {
+    // Gruppe a, b, c, d; a führt und fällt aus. Jeder verbleibende Mac rechnet auf seinen verbundenen Macs (ohne a)
+    let group: Set<String> = ["a", "b", "c", "d"]
+    var leads: [PairLead] = []
+    for me in group.subtracting(["a"]) {
+        let connected = group.subtracting([me, "a"])
+        var lead = PairLead(lamport: 1, holder: "a")
+        if let next = PairTakeover.successor(members: connected.union([me]), old: "a") { lead.takeover(to: next) }
+        leads.append(lead)
+    }
+    #expect(leads.count == 3)
+    #expect(leads.allSatisfy { $0 == PairLead(lamport: 2, holder: "b") })
+}
+
+@Test func pairTakeoverSuccessorWithoutCandidates() {
+    #expect(PairTakeover.successor(members: [], old: "a") == nil)
+    #expect(PairTakeover.successor(members: ["a"], old: "a") == nil)
+    // Führender fällt erneut aus: nächster Kandidat, der alte bleibt außen vor
+    #expect(PairTakeover.successor(members: ["b", "c", "d"], old: "b") == "c")
+}
+
+@Test func pairTakeoverReturningLeaderBecomesFollower() {
+    // a kehrt zurück, b führt seit Lamport 2: a nimmt den Anspruch an und folgt
+    var atA = PairLead(lamport: 1, holder: "a")
+    let returned = atA.accept(lamport: 2, holder: "b")
+    #expect(returned)
+    #expect(atA.holder == "b")
+    #expect(PairLead.role(own: "a", holder: atA.holder, partner: nil, connected: ["b", "c"]) == .follow)
+    // a schiebt sich nicht zurück: der alte Anspruch (Lamport 1) gewinnt nicht mehr
+    let back = atA.accept(lamport: 1, holder: "a")
+    #expect(!back)
+    #expect(atA.holder == "b")
+}
+
+@Test func pairTakeoverManualTaktAfterwardsWins() {
+    var atC = PairLead(lamport: 1, holder: "a")
+    atC.takeover(to: "b")
+    // TAKT bei c: nächster Zähler, c führt und setzt sich gegen die Übernahme durch
+    let claimed = atC.claim(by: "c")
+    #expect(claimed == PairLead(lamport: 3, holder: "c"))
+    var atB = PairLead(lamport: 2, holder: "b")
+    let won = atB.accept(lamport: 3, holder: "c")
+    #expect(won)
+    #expect(atB.holder == "c")
+}

@@ -441,6 +441,8 @@ struct AppPrefs: Codable, Equatable {
     var autoMix = AutoMixPrefs()
     /// eigene Tastenkürzel: Aktion-ID -> Kombination als Text ("" = frei), sonst Standard (ShortcutID.defaultCombo)
     var shortcuts: [String: String] = [:]
+    /// Spaltenanordnung der Track-Tabellen: Schlüssel `columns.<Bereich>` (`.2` = zweizeilig); alt ohne Eintrag = Standard
+    var columns: [String: ColumnLayout.State] = [:]
 
     var keys: ShortcutMap {
         get { ShortcutMap(overrides: shortcuts) }

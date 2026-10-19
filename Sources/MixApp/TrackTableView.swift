@@ -77,7 +77,7 @@ struct TrackColumn {
 /// gespeicherte Spalten-Anordnung im Format der früheren SwiftUI-Tabelle (TableColumnCustomization als JSON):
 /// `columnOrder` = IDs, `perColumnState` = abwechselnd ID und Zustand (Sichtbarkeit, Breite)
 enum ColumnLayout {
-    struct State: Equatable {
+    struct State: Equatable, Codable {
         var order: [String] = []
         var widths: [String: CGFloat] = [:]
         /// nur ausdrücklich gesetzte Sichtbarkeit (fehlt = Standard der Spalte)
@@ -589,10 +589,9 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     private func buildColumns(_ ui: UIPrefs) {
         guard let tv = table, tv.tableColumns.isEmpty else { return }
-        let d0 = E2E.defaults, replaced = self.replaced
-        let single = model.flatMap { d0.data(forKey: "columns.\($0.name)") }.flatMap(ColumnLayout.decode) ?? ColumnLayout.State()
-        let saved = liveMode ? ColumnLayout.State() : twoText ? layoutKey.flatMap { d0.data(forKey: $0) }.flatMap(ColumnLayout.decode)
-            ?? ColumnLayout.twoLine(from: single, replacing: replaced) : single
+        let replaced = self.replaced
+        let single = model.flatMap { storedLayout("columns.\($0.name)") } ?? ColumnLayout.State()
+        let saved = liveMode ? ColumnLayout.State() : twoText ? layoutKey.flatMap(storedLayout) ?? ColumnLayout.twoLine(from: single, replacing: replaced) : single
         let live = liveMode ? LiveList.clampSize(ui.liveListTextSize) : 0
         for id in liveMode ? LiveList.columns : ColumnLayout.placed(saved) {
             guard let d = TrackColumn.byID[id] else { continue }
@@ -621,6 +620,11 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
     }
 
+    /// gespeicherte Anordnung: aus den Einstellungen (`AppPrefs.columns`), sonst die frühere Ablage in den Standardwerten
+    private func storedLayout(_ key: String) -> ColumnLayout.State? {
+        mix?.prefs.columns[key] ?? E2E.defaults.data(forKey: key).flatMap(ColumnLayout.decode)
+    }
+
     private func scheduleSave() {
         guard !Session.isSelfTest else { return }
         saveWork?.cancel()
@@ -628,6 +632,20 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
         saveWork = w
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: w)
     }
+
+    /// Anordnung jetzt in die Einstellungen (verzögertes Schreiben abwarten entfällt): beim Ausblenden der Tabelle und
+    /// beim Beenden, sonst ginge die letzte Änderung verloren
+    func flushLayout() {
+        guard !Session.isSelfTest, saveWork != nil else { return }
+        saveWork?.cancel()
+        saveWork = nil
+        save()
+    }
+
+    /// alle lebenden Tabellen (Beenden der App)
+    nonisolated(unsafe) private static let live = NSHashTable<TrackTableController>.weakObjects()
+    override init() { super.init(); Self.live.add(self) }
+    static func flushAll() { for c in live.allObjects { c.flushLayout() } }
 
     private func save() {
         guard let tv = table, let key = layoutKey else { return }
@@ -640,7 +658,10 @@ final class TrackTableController: NSObject, NSTableViewDataSource, NSTableViewDe
             // Sammelspalte und ersetzte Spalten folgen dem Modus, nicht der gespeicherten Sichtbarkeit
             if let d = TrackColumn.byID[id], id != "track", !replaced.contains(id), c.isHidden != d.hidden { s.hidden[id] = c.isHidden }
         }
-        E2E.defaults.set(ColumnLayout.encode(s), forKey: key)
+        // nur bei Änderung schreiben (Einstellungen: Speichern und Datei-Export); die frühere Ablage entfällt
+        guard let mix, mix.prefs.columns[key] != s else { return }
+        mix.prefs.columns[key] = s
+        E2E.defaults.removeObject(forKey: key)
     }
 
     /// Zeilen-Modus, Teile der Sammelspalte oder Live-Modus geändert: Anordnung des alten Modus sichern (im Live-Modus

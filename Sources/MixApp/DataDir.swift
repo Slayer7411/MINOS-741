@@ -140,6 +140,7 @@ enum SettingsFile {
         }
         // Beenden: sofort schreiben (auch wenn der Weg über AppDelegate.onQuit nicht läuft)
         quitObserver = NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: nil) { _ in
+            MainActor.assumeIsolated { TrackTableController.flushAll() }   // offene Spaltenanordnung vor dem Export
             E2E.defaults.synchronize()
             export(sync: true)
         }

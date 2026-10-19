@@ -1132,7 +1132,7 @@ struct TrackTable: View {
             }
             .background(PreviewRowLayer(controller: rowBand, mix: decks, on: ui.previewMode == .fullRow && !live))
             .onAppear { inlineCtl.install() }
-            .onDisappear { inlineCtl.uninstall(); rowBand.remove(); table.detach() }
+            .onDisappear { inlineCtl.uninstall(); rowBand.remove(); table.detach(); table.flushLayout() }
             .onChange(of: model.selection) { browser.activePaneID = model.id }
             .onChange(of: browser.scrollRequest?.track) {
                 if let r = browser.scrollRequest, r.pane == model.id { table.scroll(to: r.track) }

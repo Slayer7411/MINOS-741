@@ -42,6 +42,23 @@ private let swiftUISaved = """
     #expect(ColumnLayout.decode(Data("nicht json".utf8)) == nil)
 }
 
+/// Spalten-Anordnung gehört zu den Einstellungen (`prefs.v1`): Round-Trip, alte Einstellungen ohne Schlüssel laden
+@Test func columnLayoutRoundTripsThroughPrefs() throws {
+    var p = AppPrefs()
+    let s = ColumnLayout.State(order: ["played", "title", "artist"], widths: ["title": 240.5], hidden: ["genre": true])
+    p.columns = ["columns.Basis": s, "columns.Basis.2": ColumnLayout.State(order: ["track"])]
+    let back = AppPrefs.decode(try JSONEncoder().encode(p))
+    #expect(back.columns == p.columns)
+}
+
+@Test func columnLayoutOldSettingsWithoutKeyDecodeToDefaults() throws {
+    var obj = try #require(JSONSerialization.jsonObject(with: try JSONEncoder().encode(AppPrefs())) as? [String: Any])
+    obj["columns"] = nil
+    let p = AppPrefs.decode(try JSONSerialization.data(withJSONObject: obj))
+    #expect(p.columns.isEmpty)
+    #expect(p.ui.deckCount == AppPrefs().ui.deckCount)
+}
+
 /// Hintergrund-Liste: gleiche Zeilen wie sofort gefiltert (Rollen, Tags, Suche)
 @Test func listFilterMatchesCriteria() {
     func t(_ k: String, _ c2: String, _ title: String) -> Track {

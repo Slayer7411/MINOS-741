@@ -45,6 +45,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 * TIDAL login: the callback listener on port 7412 accepts IPv4 and IPv6 loopback (`127.0.0.1`, `::1`, so `localhost` works in the browser); never on other interfaces. a timeout shows a clear message (`Anmeldung abgelaufen … erneut ANMELDEN`)
 * updates: release downloads redirected to `release-assets.githubusercontent.com` were refused silently (check found nothing). redirect target allowed, https only. `Jetzt prüfen` shows every outcome with its reason; automatic failures go to the status log after the first one
 * fx golden test `fxPluginSlotBitIdenticalToOldChain` passes again: its hash was not updated with the glide snap (9f8fd46). the plugin slot output differs from the old chain only where the deck volume glide snaps to its target (from block 9, max 4.99e-5 relative); hash `0x6f8a07943193ddbf`
+* browser: track table column widths, order and visibility are stored in the settings (same as ⌘, and the settings file), restored on start and kept when switching tabs or views; the last change is saved when the table goes away or the app quits. unit tests (round trip through the settings, settings without the key)
 
 ## ◆ [0.8.2] · 2026-10-17 · LIMBUS · TWO MACS
 

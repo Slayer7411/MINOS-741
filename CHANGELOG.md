@@ -22,6 +22,7 @@ codenames: every major version is named after a circle of hell (minos judges the
 
 ### changed
 * b2b group: when the leader is lost, a follower keeps its tempo and shows "lead lost" in the strip (no tempo jump). Pair protocol version 7.
+* b2b group: automatic takeover. When the leader has been silent for 3 s, the remaining Macs agree on the lowest instance id among them and continue at the same tempo and beat; a returning leader joins as follower, TAKT still wins.
 * settings (⌘,): regrouped into tabs by task. new first tab ALLGEMEIN (setup, language and zoom, data folder, updates, crash reports, LIVE, start behavior; opens on first start only), new LIVE & SYNC (live readability, two macs, link, DAW bridge, groove). rare options sit on an ERWEITERT sub-page per tab (link at the bottom of each tab; search and deep links open it). favorites: ☆ on every setting, FAVORITEN page, and a ★ popover in the top bar; stored in the settings file.
 * files: collection check (papierkorb, remove, duplicates) and set recording (folder and free name) check files off the main thread; the recording starts once the name is ready. unit tests (existence check off main, free name and folder)
 

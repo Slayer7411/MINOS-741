@@ -584,9 +584,11 @@ final class PairLink {
             c.bpm = bpm
             refresh()
         case let .lead(lamport, holder):
+            let before = lead.holder
             guard lead.accept(lamport: lamport, holder: holder) else { return }
             // weitergeben: der Anspruch erreicht auch Macs, die nur über einen anderen Mac verbunden sind
             for o in links where o !== c { sendTo(o, .lead(lamport: lamport, holder: holder)) }
+            if lead.holder != before { leaderChanged(now: PairClock.nowMicros()) }
             applyTakt()
         case let .state(writes, decks):
             c.writes = writes
@@ -719,8 +721,35 @@ final class PairLink {
         if clockTicks % 10 == 0 {
             for c in links where c.mode != nil { sendTo(c, .ping(t0: now)) }
         }
+        // Führender ausgeblieben: nach der Frist übernimmt die Gruppe (vor der Anzeige, damit „lead lost“ nicht bleibt)
+        if pairFollowHere, PairTakeover.due(silentMicros: now - max(clockAt, pairSince)) { takeOver(now: now) }
         let lost = pairFollowHere && now - max(clockAt, pairSince) > PairClock.staleMicros
         if lost != leadLost { leadLost = lost; report() }
+    }
+
+    /// Führender ausgeblieben (kein Takt seit der Frist, `PairTakeover`): die verbundenen B2B-Macs rechnen denselben
+    /// Nachfolger und setzen die Führung (Zähler + 1) ohne Abwarten. Ihr Tempo und Beat laufen ohne Sprung weiter;
+    /// der Nachfolger meldet die Führung über die Verbindungen
+    private func takeOver(now: Int64) {
+        guard let old = lead.holder, old != PairIdentity.id else { return }
+        let session = links.first { $0.mode == .session }
+        let role = PairLead.role(own: PairIdentity.id, holder: old, partner: session?.id, connected: Set(links.compactMap { $0.id }))
+        guard role == .follow else { return }
+        let members = Set(links.filter { $0.mode == .b2b }.compactMap { $0.id }).union([PairIdentity.id])
+        guard let next = PairTakeover.successor(members: members, old: old) else { return }
+        lead.takeover(to: next)
+        leaderChanged(now: now)
+        if next == PairIdentity.id { send(.lead(lamport: lead.lamport, holder: next)) }
+        applyTakt()
+        report()
+    }
+
+    /// Neue Führung: die Frist beginnt neu (der neue Führende soll zuerst seinen Takt schicken), alter Taktweg vergessen
+    private func leaderChanged(now: Int64) {
+        clockAt = now
+        clockSource = nil
+        clockHops = Int.max
+        leadLost = false
     }
 
     /// Takt: welche Rolle dieser Mac hat (PairLead), im Paar entscheidet PairTempo; Link folgt, solange ein anderer führt

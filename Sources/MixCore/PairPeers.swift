@@ -94,6 +94,12 @@ public struct PairLead: Equatable, Sendable {
         return self
     }
 
+    /// Übernahme nach Ausfall des Führenden: nächster Zähler, `holder` führt. Jeder Mac, der dieselbe Regel auf denselben
+    /// Verbindungen rechnet, landet bei derselben Führung (ohne Nachricht abzuwarten)
+    public mutating func takeover(to holder: String) {
+        self = PairLead(lamport: lamport + 1, holder: holder)
+    }
+
     public static func wins(lamport: Int, holder: String, over cur: PairLead) -> Bool {
         if lamport != cur.lamport { return lamport > cur.lamport }
         guard let h = cur.holder else { return true }
@@ -110,6 +116,20 @@ public struct PairLead: Equatable, Sendable {
         if h == own { return partner.map(connected.contains) == true ? .pair : .group }
         if h == partner { return connected.contains(h) ? .pair : .group }
         return .follow
+    }
+}
+
+/// Übernahme, wenn der Führende ausbleibt: nach `graceMicros` ohne Takt führt die kleinste Kennung unter den verbundenen
+/// B2B-Macs (inklusive dieses Macs), ohne den alten Führenden. Kurze Aussetzer im WLAN lösen so keinen Wechsel aus
+public enum PairTakeover {
+    public static let graceMicros: Int64 = 3_000_000
+
+    /// Takt seit länger als die Frist ausgeblieben
+    public static func due(silentMicros: Int64) -> Bool { silentMicros > graceMicros }
+
+    /// Nachfolger: kleinste Kennung in `members` ohne den alten Führenden; nil ohne Kandidaten
+    public static func successor(members: Set<String>, old: String?) -> String? {
+        members.subtracting(old.map { [$0] } ?? []).min()
     }
 }
 

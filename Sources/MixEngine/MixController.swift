@@ -1892,23 +1892,23 @@ public final class MixController: @unchecked Sendable {
 
     /// Regler oder D/W bewegt (0…1): an das zugewiesene Ziel, nicht zugewiesen = nichts
     public func setFXControl(_ u: Int, _ c: FXControl, _ v: Double) {
-        locked {
-            guard let p = state.fxControls[u][c.slot].param else { return }
-            setFXParam(u, p, v)
+        runFXSet {
+            guard let p = state.fxControls[u][c.slot].param else { return nil }
+            return setFXParam(u, p, v)
         }
     }
 
     /// Taste gedrückt: Schalter um, Liste eine Stufe weiter, stufenlos zwischen min und max
     public func pressFXButton(_ u: Int, _ i: Int) {
-        locked {
+        runFXSet {
             let info = state.fxControls[u][FXControl.button(i).slot]
-            guard let p = info.param else { return }
+            guard let p = info.param else { return nil }
             var next = info.value >= 0.5 ? 0.0 : 1.0
             if p.steps > 1 {
                 let k = (info.value * Double(p.steps)).rounded() + 1
                 next = k > Double(p.steps) ? 0 : k / Double(p.steps)
             }
-            setFXParam(u, p, next)
+            return setFXParam(u, p, next)
         }
     }
 
@@ -1938,23 +1938,40 @@ public final class MixController: @unchecked Sendable {
 
     /// Parameter eines Slots per Schlüssel setzen (Stellung 0…1; Parameter-Fenster eines eingebauten Effekts, Tests)
     public func setFXTarget(_ u: Int, _ id: String, _ v: Double) {
-        locked {
-            guard let i = paramIndex[u][id] else { changeFX(u) { FXCatalog.set(id, v, &$0) }; return }
-            setFXParam(u, state.fxParams[u][i], v)
+        runFXSet {
+            guard let i = paramIndex[u][id] else { changeFX(u) { FXCatalog.set(id, v, &$0) }; return nil }
+            return setFXParam(u, state.fxParams[u][i], v)
         }
     }
 
+    /// Plugin-Stellung, die nach dem Entsperren gesetzt wird (Plugin-Aufrufe nie unter der Sperre)
+    private struct PluginSet {
+        let insts: [PluginInstance]
+        let pid: AudioUnitParameterID
+        let value: Float
+    }
+
+    /// FX-Änderung: der Zustand wird unter der Sperre übernommen, die Plugin-Aufrufe danach, in derselben Reihenfolge
+    /// (eigene Sperre `fxSetLock`, nur für FX-Setzer; die Sperre des Controllers wird vorher freigegeben)
+    private func runFXSet(_ body: () -> PluginSet?) {
+        fxSetLock.lock()
+        defer { fxSetLock.unlock() }
+        guard let set = locked(body) else { return }
+        for inst in set.insts { inst.set(set.pid, set.value) }
+    }
+    private let fxSetLock = NSLock()
+
     /// Ziel setzen: eigener Parameter -> Slot der Unit, Plugin-Parameter -> alle Instanzen des Slots (Steuer-Weg wie das Fenster)
-    private func setFXParam(_ u: Int, _ p: FXParam, _ v: Double) {
+    /// Unter der Sperre: Zustand setzen; liefert die Plugin-Stellung für `runFXSet` (nil = eingebauter Effekt)
+    private func setFXParam(_ u: Int, _ p: FXParam, _ v: Double) -> PluginSet? {
         let pos = p.snapped(v)
         guard let pid = p.pluginParam else {
             changeFX(u) { FXCatalog.set(p.id, pos, &$0) }
-            return
+            return nil
         }
-        let plain = Float(p.plain(pos))
-        for inst in slotInsts(u, p.pluginSlot) ?? [] { inst.set(pid, plain) }
         state.fx[u].pluginValues[p.id] = pos
         refreshControls(u)
+        return PluginSet(insts: slotInsts(u, p.pluginSlot) ?? [], pid: pid, value: Float(p.plain(pos)))
     }
 
     /// Rack geändert: Zuweisung der neuen Kennung aus den Einstellungen, Parameterliste neu; dann Ziele auflösen
@@ -2010,14 +2027,25 @@ public final class MixController: @unchecked Sendable {
         if out != state.fxControls[u] { state.fxControls[u] = out }
     }
 
-    /// Stellung eines Ziels: eigener Wert, Plugin = zuletzt gesetzter Wert, sonst vom Plugin gelesen (und gemerkt)
+    /// Stellung eines Ziels: eigener Wert, Plugin = zuletzt gesetzter Wert. Noch nicht gelesen: Standard zeigen und das
+    /// Plugin außerhalb der Sperre fragen (AU out of process: IPC); die Stellung kommt zurück und ersetzt den Standard
     private func fxValue(_ u: Int, _ p: FXParam) -> Double {
         guard let pid = p.pluginParam else { return FXCatalog.value(p.id, state.fx[u], prefs: state.prefs) ?? 0 }
         if let v = state.fx[u].pluginValues[p.id] { return v }
         guard let inst = slotInsts(u, p.pluginSlot)?.first else { return p.defaultValue }
-        let v = p.position(Double(inst.value(pid)))
-        state.fx[u].pluginValues[p.id] = v
-        return v
+        let key = "\(u)|\(p.id)"
+        if pendingValueReads.insert(key).inserted {
+            pluginReads.async { [self] in
+                let v = p.position(Double(readPluginValue(inst, pid)))
+                locked {
+                    pendingValueReads.remove(key)
+                    guard state.fx[u].pluginValues[p.id] == nil, slotInsts(u, p.pluginSlot)?.first === inst else { return }
+                    state.fx[u].pluginValues[p.id] = v
+                    refreshControls(u)
+                }
+            }
+        }
+        return p.defaultValue
     }
 
     // MARK: Slots und Plugins
@@ -2049,6 +2077,11 @@ public final class MixController: @unchecked Sendable {
     private var installedKinds = [[Int32]?](repeating: nil, count: busCount)
     private let pluginQueue = DispatchQueue(label: "minos741.plugins", qos: .userInitiated)
     private let pluginEvents = DispatchQueue(label: "minos741.plugin-events", qos: .userInitiated)
+    /// Stellungen, die noch vom Plugin gelesen werden (Schlüssel: Unit|Ziel); Lesen nie unter der Sperre
+    private let pluginReads = DispatchQueue(label: "minos741.plugin-reads", qos: .userInitiated)
+    private var pendingValueReads = Set<String>()
+    /// Test-Naht: liest den Wert eines Plugin-Parameters (auf der Lese-Queue, nie unter der Sperre)
+    var readPluginValue: (PluginInstance, AudioUnitParameterID) -> Float = { $0.value($1) }
     /// Plugin-Liste, Einstellungen, Absturz-Markierung (die App setzt vor dem ersten Laden eine gespeicherte ein)
     public var pluginCatalog = PluginCatalog(directory: nil) {
         didSet { observeInvalidation() }
@@ -2286,14 +2319,13 @@ public final class MixController: @unchecked Sendable {
 
     /// Instanz für das Plugin-Fenster (die des ersten Decks); Änderungen darin gehen live an die anderen Decks des Slots
     public func beginPluginEdit(_ b: Int, slot k: Int = 0) -> PluginInstance? {
-        locked {
-            guard let first = slotInsts(b, k)?.first else { return nil }
-            first.observe(on: pluginEvents) { [weak self, weak first] id, v in
-                guard let self, let first else { return }
-                self.pluginParamChanged(b, first, id, v)
-            }
-            return first
+        guard let first = locked({ slotInsts(b, k)?.first }) else { return nil }
+        // Zuhörer beim Plugin anmelden (AU: pro Parameter ein Aufruf an den Dienst) – außerhalb der Sperre
+        first.observe(on: pluginEvents) { [weak self, weak first] id, v in
+            guard let self, let first else { return }
+            self.pluginParamChanged(b, first, id, v)
         }
+        return first
     }
 
     /// Fenster zu: Zuhören beenden, Zustand für die Sitzung merken (VST3: Zustand auf dem UI-Thread, außerhalb der Sperre)
@@ -2307,11 +2339,14 @@ public final class MixController: @unchecked Sendable {
     }
 
     private func pluginParamChanged(_ b: Int, _ src: PluginInstance, _ id: AudioUnitParameterID, _ v: Float) {
+        // die anderen Instanzen des Slots nachziehen: Plugin-Aufrufe außerhalb der Sperre (auf der Ereignis-Queue)
+        let others = locked { () -> [PluginInstance] in
+            guard let k = slots(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === src } == true }) else { return [] }
+            return slotInsts(b, k)?.filter { $0 !== src } ?? []
+        }
+        for p in others where p.value(id) != v { p.set(id, v) }
         locked {
-            guard let k = slots(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === src } == true }),
-                  let insts = slotInsts(b, k) else { return }
-            for p in insts where p !== src && p.value(id) != v { p.set(id, v) }
-            guard b < Self.masterBus else { return }
+            guard b < Self.masterBus, let k = slots(b).indices.first(where: { slotInsts(b, $0)?.contains { $0 === src } == true }) else { return }
             // Bedienelemente folgen dem Fenster; gemerkte Stellungen bleiben aktuell
             let key = FXParam.pluginKey(id, slot: k)
             guard state.fx[b].pluginValues[key] != nil || state.fxControls[b].contains(where: { $0.param?.id == key }),
@@ -2701,6 +2736,11 @@ public final class MixController: @unchecked Sendable {
             }
             if tickCount % 50 == 0, !loads.isEmpty { (expired, slow) = expiredLoads() }
             return tickCount % 6 == 0 ? tickHandlers : []
+        }
+        // Host-Ereignisse der Plugins aus dem Audio-Thread (Zuhörer, Umbau): alle 10 ms auf der Ereignis-Queue, der Takt wartet nie
+        if tickCount % 2 == 0 {
+            let vst = locked { installed.flatMap { $0.flatMap { $0 } }.compactMap { $0 }.filter(\.isVST3) }
+            if !vst.isEmpty { pluginEvents.async { for p in vst { p.drainHostEvents() } } }
         }
         for l in expired {
             failLoad(l.track, l.deck, seq: l.seq, reason: String(localized: "keine Audiodaten (Cloud-Datei nicht geladen, Lesen hängt?)"), timeout: l.timeout)

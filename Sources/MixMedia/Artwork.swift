@@ -33,7 +33,7 @@ public final class ArtworkCache: @unchecked Sendable {
     private var aliases: [String: String] = [:]
 
     private final class Job {
-        var task: Task<Void, Never>?
+        var task: Task<CGImage?, Never>?
         var waiters = 1
     }
 
@@ -63,13 +63,15 @@ public final class ArtworkCache: @unchecked Sendable {
             let j = Job()
             jobs[key] = j
             j.task = Task.detached(priority: .utility) { [self] in
-                await work(path, size)
+                let img = await work(path, size)
                 lock.withLock { if jobs[key] === j { jobs[key] = nil } }
+                return img
             }
             return j
         }
-        await withTaskCancellationHandler {
-            await job.task?.value
+        // Ergebnis der Arbeit, nicht erneut aus dem Speicher-Cache (NSCache kann es inzwischen verworfen haben)
+        return await withTaskCancellationHandler {
+            await job.task?.value ?? nil
         } onCancel: {
             lock.withLock {
                 job.waiters -= 1
@@ -79,41 +81,42 @@ public final class ArtworkCache: @unchecked Sendable {
                 }
             }
         }
-        return memory.object(forKey: memKey(path, size))?.image
     }
 
-    private func work(_ path: String, _ size: Size) async {
-        guard !Task.isCancelled else { return }
+    private func work(_ path: String, _ size: Size) async -> CGImage? {
+        guard !Task.isCancelled else { return nil }
         await gate.acquire()
         defer { Task { await gate.release() } }
-        guard !Task.isCancelled else { return }
-        await load(path, size)
+        guard !Task.isCancelled else { return nil }
+        return await load(path, size)
     }
 
-    private func store(_ path: String, _ size: Size, _ img: CGImage?) {
+    @discardableResult
+    private func store(_ path: String, _ size: Size, _ img: CGImage?) -> CGImage? {
         memory.setObject(Entry(img), forKey: memKey(path, size), cost: img.map { $0.bytesPerRow * $0.height } ?? 64)
+        return img
     }
 
-    private func load(_ path: String, _ size: Size) async {
+    private func load(_ path: String, _ size: Size) async -> CGImage? {
         var st = stat()
-        guard stat(path, &st) == 0 else { store(path, size, nil); return }
+        guard stat(path, &st) == 0 else { return store(path, size, nil) }
         // Datei liegt nur in der Cloud (nicht geladen): nicht anfassen, sonst lädt der Dateianbieter den ganzen Track
-        if st.st_flags & UInt32(SF_DATALESS) != 0 { return }
+        if st.st_flags & UInt32(SF_DATALESS) != 0 { return nil }
         let base = Self.diskKey(path: path, mtime: st.st_mtimespec.tv_sec, size: st.st_size)
         let none = directory.appendingPathComponent(base + ".none")
         let file = directory.appendingPathComponent("\(base)-\(size.rawValue).jpg")
-        if FileManager.default.fileExists(atPath: none.path) { store(path, size, nil); return }
-        if let img = Self.decode(url: file) { store(path, size, img); return }
+        if FileManager.default.fileExists(atPath: none.path) { return store(path, size, nil) }
+        if let img = Self.decode(url: file) { return store(path, size, img) }
         // noch nicht im Platten-Cache: aus der Datei lesen, nur die verlangte Größe ablegen
         // (groß nur für Decks und Vorschau, sonst wüchse der Cache beim Scrollen um ~35 KB je Track)
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return nil }
         guard let (data, _) = await find(path), let src = CGImageSourceCreateWithData(data as CFData, nil),
               let img = Self.thumbnail(src, pixels: size.rawValue) else {
             if !Task.isCancelled { FileManager.default.createFile(atPath: none.path, contents: nil); store(path, size, nil) }
-            return
+            return nil
         }
         Self.writeJPEG(img, to: file)
-        store(path, size, img)
+        return store(path, size, img)
     }
 
     /// Rohbild eines Tracks: eingebettet, sonst Ordner-Cover

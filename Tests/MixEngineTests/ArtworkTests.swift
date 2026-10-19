@@ -91,7 +91,6 @@ private func m4aWithCover(_ jpeg: Data, in dir: URL) async throws -> URL {
     let cacheDir = dir.appendingPathComponent("cache")
     let cache = ArtworkCache(directory: cacheDir)
     #expect(await cache.image(track.path, .small) == nil)
-    #expect(cache.cached(track.path, .small) == .some(nil))   // bekannt: kein Cover
     #expect(try FileManager.default.contentsOfDirectory(atPath: cacheDir.path).contains { $0.hasSuffix(".none") })
     #expect(await cache.image(dir.appendingPathComponent("missing.mp3").path, .small) == nil)
 }

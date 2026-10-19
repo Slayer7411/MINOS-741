@@ -171,14 +171,15 @@ final class MusicFolderStore {
 /// Baum-Knoten MUSIC FOLDERS: eingestellte Ordner, Unterordner klappen auf und werden erst dann gelesen
 struct MusicFolderTree: View {
     @Environment(LibraryStore.self) private var store
+    @Environment(PlaylistTreeUI.self) private var ui
     @Binding var selection: BrowserSource
     @State private var open = false
     @State private var expanded: Set<String> = []
 
     var body: some View {
         DisclosureGroup(isExpanded: $open) {
-            ForEach(store.folders.roots, id: \.self) { p in
-                MusicFolderRow(path: p, expanded: $expanded)
+            ForEach(ui.folders(store.folders.roots, group: SidebarKey.folderGroup(nil)), id: \.self) { p in
+                MusicFolderRow(path: p, expanded: $expanded, group: SidebarKey.folderGroup(nil))
             }
         } label: {
             MusicFolderRow.label("▸", "MUSIC FOLDERS")
@@ -209,6 +210,8 @@ struct MusicFolderRow: View, SourceMenus {
     @Environment(PlaylistTreeUI.self) private var ui
     let path: String
     @Binding var expanded: Set<String>
+    /// Ebene des Eintrags zum Umordnen (Baum der Musik-Ordner); nil in Suche und Orten: nur Farbe und Ziehen auf Favoriten
+    var group: String? = nil
 
     var body: some View {
         let subs = store.folders.subfolders(path)
@@ -216,7 +219,8 @@ struct MusicFolderRow: View, SourceMenus {
             DisclosureGroup(isExpanded: Binding(get: { expanded.contains(path) },
                                                 set: { if $0 { expanded.insert(path) } else { expanded.remove(path) } })) {
                 if expanded.contains(path) {
-                    ForEach(subs, id: \.self) { MusicFolderRow(path: $0, expanded: $expanded) }
+                    let sorted = group == nil ? subs : ui.folders(subs, group: SidebarKey.folderGroup(path))
+                    ForEach(sorted, id: \.self) { MusicFolderRow(path: $0, expanded: $expanded, group: group == nil ? nil : SidebarKey.folderGroup(path)) }
                 }
             } label: { folderLabel }
         } else {
@@ -225,11 +229,25 @@ struct MusicFolderRow: View, SourceMenus {
     }
 
     private var folderLabel: some View {
-        Self.label("▱", (path as NSString).lastPathComponent)
+        let key = SidebarKey.folder(path)
+        let g = group ?? ""
+        return Self.label("▱", (path as NSString).lastPathComponent)
             .help(path)
             .tag(BrowserSource.folder(path))
-            .favoriteDrag { [path] in BrowserFavorite.source(.folder(path), store: store) }
+            .background(ui.sidebarTarget == key ? Theme.chitinRaised : .clear)
+            .sidebarDrag(group: g, key: key) { BrowserFavorite.source(.folder(path), store: store) }
+            .sidebarMark(ui, key)
+            // Umordnen: nur innerhalb der eigenen Ebene (Zug trägt die Ebene)
+            .treeDropZone(ui.regions, name: "folder reorder", highlight: { on in
+                ui.sidebarTarget = on ? key : (ui.sidebarTarget == key ? nil : ui.sidebarTarget)
+            }, accepts: { strings in
+                g != "" && strings.contains { SidebarDrag.item($0)?.group == g }
+            }) { strings in
+                ui.reorder(strings, before: key, group: g, ids: siblingKeys(g))
+            }
             .contextMenu {
+                SidebarMarkMenu(ui: ui, key: key)
+                Divider()
                 Button("Neu einlesen") { store.folders.rescan(path) }
                 resetPlayedButton(.folder(path), marked: ui.marked)
                 autoMixMenuButton(.folder(path), marked: ui.marked, mix: mix)
@@ -240,6 +258,12 @@ struct MusicFolderRow: View, SourceMenus {
                 Button("Im Finder zeigen") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
                 Button("Pfad kopieren") { TrackMenu.copy(path) }
             }
+    }
+
+    /// Geschwister in der Ebene `g` (natürliche Reihenfolge, als Schlüssel)
+    private func siblingKeys(_ g: String) -> [String] {
+        let parent = String(g.dropFirst(2))   // „m:“ + Elternpfad, leer bei den Wurzeln
+        return (parent.isEmpty ? store.folders.roots : store.folders.subfolders(parent) ?? []).map(SidebarKey.folder)
     }
 
     static func label(_ glyph: String, _ name: String) -> some View {

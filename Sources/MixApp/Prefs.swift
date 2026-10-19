@@ -336,6 +336,9 @@ struct UIPrefs: Codable, Equatable {
     /// gespielte Tracks aus Collection, Playlists, Smartlists und Ordnern ausblenden (◆ UNGESPIELT; History, RUNNING
     /// und Preparation zeigen sie weiter)
     var hidePlayedTracks = false
+    /// Seitenleiste: Reihenfolge der Ordner und Collection-Playlists sowie Farbmarken (Schlüssel = Pfad bzw. UUID;
+    /// die Collection-Datei bleibt unverändert)
+    var sidebar = SidebarArrange()
     /// Played-Status beim Start der App zurücksetzen (wie ⌥⌘P), Standard an
     var resetPlayedOnStart = true
     /// Zwei-Mac-Modus (bleibt auf dem Mac)

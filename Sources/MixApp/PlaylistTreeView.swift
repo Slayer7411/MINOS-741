@@ -55,7 +55,7 @@ enum TreeDragGate {
 
     /// nur Tracks und Baum-Einträge (Reordering der Liste und fremde Texte bleiben bei SwiftUI bzw. werden abgelehnt)
     static func carriesItems(_ pb: NSPasteboard) -> Bool {
-        strings(pb).contains { TrackDrag.key($0) != nil || TreeDrag.item($0) != nil }
+        strings(pb).contains { TrackDrag.key($0) != nil || TreeDrag.item($0) != nil || SidebarDrag.item($0) != nil }
     }
 
     private static func install() {
@@ -187,8 +187,42 @@ final class PlaylistTreeUI {
     @ObservationIgnored let regions = DropRegions()
     /// Mehrfachauswahl im Baum (⌘ / ⇧ Klick); die Quelle des Browsers ist der zuletzt angeklickte Eintrag
     var marked: Set<BrowserSource> = []
+    /// Reihenfolge und Farben der Seitenleiste (Überlagerung in den Einstellungen, nicht in der Collection-Datei)
+    var arrange = SidebarArrange()
+    /// Zeile, auf die gerade ein Umordnen-Zug zeigt
+    var sidebarTarget: String?
+    /// Speichern der Überlagerung in die Einstellungen (mit Verzögerung, siehe `commit`)
+    @ObservationIgnored var persist: ((SidebarArrange) -> Void)?
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
 
     func rename(_ i: PlaylistItem) { renameText = i.name; renaming = i }
+
+    /// Überlagerung übernehmen: sofort sichtbar, gespeichert erst nach einer kurzen Pause (gesammelt)
+    func commit(_ new: SidebarArrange) {
+        arrange = new
+        saveTask?.cancel()
+        saveTask = Task {
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            persist?(arrange)
+        }
+    }
+
+    func setMark(_ mark: SidebarMark?, _ key: String) {
+        var a = arrange
+        a.setMark(mark, for: key)
+        commit(a)
+    }
+
+    /// Umordnen: Zug aus `strings` vor `target` in die Ebene `group` (nur eigene Ebene; sonst false)
+    func reorder(_ strings: [String], before target: String, group: String, ids: [String]) -> Bool {
+        guard let drag = strings.lazy.compactMap(SidebarDrag.item).first(where: { $0.group == group }),
+              drag.key != target else { return false }
+        var a = arrange
+        a.move(drag.key, before: target, in: group, ids: ids)
+        commit(a)
+        return true
+    }
 }
 
 /// Ein Baum „PLAYLISTS“: eigene Ordner / Playlists / Smartlists (änderbar) und darunter die der Collection-Datei
@@ -204,24 +238,30 @@ struct PlaylistsSection: View, SourceMenus {
         @Bindable var ui = ui
         DisclosureGroup(isExpanded: $ui.rootOpen) {
             OwnItemsView(items: store.playlists.items, selection: $selection)
-            OutlineGroup(store.root.visibleChildren ?? [], children: \.visibleChildren) { node in
+            OutlineGroup(collectionTree(store.root.visibleChildren ?? [], parent: ""), children: \.children) { c in
+                let node = c.node
                 row(icon(node), node.name)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .background(ui.dropTarget == node.id ? Theme.chitinRaised : .clear)
+                    .background(ui.dropTarget == node.id || ui.sidebarTarget == c.key ? Theme.chitinRaised : .clear)
                     .tag(BrowserSource.node(node))
                     .lineLimit(1)
                     .help(collectionHelp(node))
-                    .favoriteDrag { BrowserFavorite.source(.node(node), store: store) }
+                    // Umordnen in der eigenen Ebene (Überlagerung); Tracks gehen weiter auf die Playlist
+                    .sidebarDrag(group: c.group, key: c.key) { BrowserFavorite.source(.node(node), store: store) }
+                    .sidebarMark(ui, c.key)
                     // Playlist der Collection: Tracks ablegen (wird in die Datei geschrieben); Smartlist: Hinweis
                     .treeDropZone(ui.regions, name: "collection drop \(node.name)", highlight: { on in
                         ui.dropTarget = on ? node.id : (ui.dropTarget == node.id ? nil : ui.dropTarget)
+                        ui.sidebarTarget = on ? c.key : (ui.sidebarTarget == c.key ? nil : ui.sidebarTarget)
                     }, accepts: { strings in
-                        strings.contains { TrackDrag.key($0) != nil }
+                        strings.contains { TrackDrag.key($0) != nil || SidebarDrag.item($0)?.group == c.group }
                     }) { strings in
-                        dropCollection(node, strings)
+                        ui.reorder(strings, before: c.key, group: c.group, ids: c.siblings) || dropCollection(node, strings)
                     }
                     .contextMenu {
+                        SidebarMarkMenu(ui: ui, key: c.key)
+                        Divider()
                         resetPlayedButton(.node(node), marked: ui.marked)
                         autoMixMenuButton(.node(node), marked: ui.marked, mix: mix)
                         if node.kind != .folder { exportMenu(.node(node)) }
@@ -281,6 +321,25 @@ extension PlaylistsSection {
         }
     }
 
+    /// Baum der Collection in Anzeigeordnung (Überlagerung); Schlüssel sind stabil, die Knoten-IDs nicht
+    func collectionTree(_ nodes: [PlaylistNode], parent: String) -> [CollectionRow] {
+        let group = SidebarKey.collectionGroup(parent)
+        var seen: [String: Int] = [:]
+        let keyed = nodes.map { n -> (PlaylistNode, String) in
+            let k = SidebarKey.collection(n, parent: parent)
+            let count = seen[k, default: 0]
+            seen[k] = count + 1
+            return (n, count == 0 ? k : k + "#\(count)")   // doppelte Namen ohne UUID bleiben eindeutig
+        }
+        let byKey = Dictionary(keyed.map { ($0.1, $0.0) }, uniquingKeysWith: { a, _ in a })
+        let siblings = keyed.map(\.1)
+        return ui.arrange.sorted(group, siblings).compactMap { k in
+            guard let n = byKey[k] else { return nil }
+            return CollectionRow(node: n, key: k, group: group, siblings: siblings,
+                                 children: n.visibleChildren.map { collectionTree($0, parent: k) })
+        }
+    }
+
     /// Ablegen auf eine Playlist der Collection: ans Ende in die Datei. Smartlist: die Tracks kommen über die Regel
     func dropCollection(_ node: PlaylistNode, _ strings: [String]) -> Bool {
         let keys = strings.compactMap(TreeDrag.track)
@@ -296,6 +355,16 @@ extension PlaylistsSection {
         store.addToCollectionPlaylist(node.id, keys: keys)
         return true
     }
+}
+
+/// Knoten der Collection in Anzeigeordnung: Schlüssel für Reihenfolge und Farbe, Geschwister für das Umordnen
+struct CollectionRow: Identifiable {
+    let node: PlaylistNode
+    let key: String
+    let group: String
+    let siblings: [String]
+    let children: [CollectionRow]?
+    var id: String { key }
 }
 
 extension PlaylistNode {
@@ -385,6 +454,7 @@ struct OwnItemRow: View, SourceMenus {
             .tag(src)
             .lineLimit(1)
             .help(help)
+            .sidebarMark(ui, SidebarKey.own(item.id))
             .itemProvider {
                 let make = { MainActor.assumeIsolated { TreeProviderBox(provider: TreeDrag.provider(item.id, favorite: BrowserFavorite.source(src, store: store))) } }
                 return (Thread.isMainThread ? make() : DispatchQueue.main.sync(execute: make)).provider
@@ -424,6 +494,8 @@ struct OwnItemRow: View, SourceMenus {
     }
 
     @ViewBuilder private func menu(_ src: BrowserSource) -> some View {
+        SidebarMarkMenu(ui: ui, key: SidebarKey.own(item.id))
+        Divider()
         if item.kind == .folder {
             PlaylistNewMenu(parent: item.id, selection: $selection)
             Divider()

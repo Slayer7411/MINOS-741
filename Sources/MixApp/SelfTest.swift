@@ -777,6 +777,7 @@ enum SelfTest {
         let without = await load(2)
         rec.testSource = .master
         rec.start()
+        for _ in 0..<200 where rec.preparing { try? await Task.sleep(for: .milliseconds(10)) }   // Ordner/Name im Hintergrund
         guard rec.recording, let url = rec.url, let started = rec.startedAt else { fail("startet nicht (\(StatusCenter.shared.current?.text ?? "-"))") }
         let with = await load(2)   // gleiche Decks wie ohne, nur der Abgriff dazu
         let cost = engine.takeTapCost()
@@ -811,6 +812,7 @@ enum SelfTest {
         rec.testSource = .input
         mix.prefs.record.inputUID = "minos741-selftest-no-such-device"
         rec.start()
+        for _ in 0..<200 where rec.preparing { try? await Task.sleep(for: .milliseconds(10)) }
         guard !rec.recording else { fail("Eingang ohne Gerät nimmt auf") }
         log("Aufnahme Eingang ohne Gerät: \(StatusCenter.shared.current?.text ?? "-") · läuft \(rec.recording)")
         log("AUFNAHME OK")

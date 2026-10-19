@@ -201,14 +201,17 @@ extension ConsistencyModel {
 
     /// in den Papierkorb, nie löschen; nur Dateien, die es gibt
     static func trash(_ paths: [String]) {
-        let urls = Array(Set(paths)).filter { FileManager.default.fileExists(atPath: $0) }.map { URL(fileURLWithPath: $0) }
-        guard !urls.isEmpty else { return }
-        let n = urls.count
-        NSWorkspace.shared.recycle(urls) { _, error in
-            if let error {
-                StatusCenter.post(.error, String(localized: "Papierkorb: \(error.localizedDescription)"), key: "trash")
-            } else {
-                StatusCenter.post(.ok, String(localized: "\(n) Dateien in den Papierkorb"), key: "trash")
+        Task {
+            // Existenz im Hintergrund (Cloud-Ordner), der Papierkorb danach auf dem Hauptthread
+            let urls = await FileExistence.existing(Array(Set(paths))).map { URL(fileURLWithPath: $0) }
+            guard !urls.isEmpty else { return }
+            let n = urls.count
+            NSWorkspace.shared.recycle(urls) { _, error in
+                if let error {
+                    StatusCenter.post(.error, String(localized: "Papierkorb: \(error.localizedDescription)"), key: "trash")
+                } else {
+                    StatusCenter.post(.ok, String(localized: "\(n) Dateien in den Papierkorb"), key: "trash")
+                }
             }
         }
     }
@@ -222,25 +225,29 @@ extension ConsistencyModel {
             return
         }
         let refs = refCount(keys, store: store)
-        var info = [String(localized: "\(tracks.count) Einträge aus der Collection"),
-                    String(localized: "\(refs) Verweise in Playlists fallen weg")]
-        let files = tracks.filter { FileManager.default.fileExists(atPath: $0.path) }
-        if trash {
-            info.append(String(localized: "\(files.count) Dateien in den Papierkorb"))
-            let cloud = files.filter { CloudPaths.isCloudBacked($0.path) }.count
-            if cloud > 0 { info.append(String(localized: "\(cloud) davon im Cloud-Ordner: nur der lokale Platzhalter geht in den Papierkorb")) }
-        } else {
-            info.append(String(localized: "Dateien bleiben liegen"))
-        }
-        let title = trash ? String(localized: "Aus Collection entfernen + Dateien?") : String(localized: "Aus Collection entfernen?")
-        ensureWrite(store) {
-            CheckConfirm.ask(title, info: info, sample: tracks.map { self.line($0) },
-                             action: trash ? String(localized: "Entfernen + Papierkorb") : String(localized: "Entfernen")) {
-                store.writeCollection(CollectionMerge.removalJob(keys: keys)) { r in
-                    guard let r, r.changed else { return }
-                    let gone = Set(r.removed)
-                    self.findings.removeAll { f in f.key.map { gone.contains($0) } ?? false }
-                    if trash { Self.trash(tracks.filter { gone.contains($0.key) }.map(\.path)) }
+        // Dateien prüfen im Hintergrund (Cloud-Ordner), die Bestätigung danach
+        Task {
+            let present = Set(await FileExistence.existing(tracks.map(\.path)))
+            let files = tracks.filter { present.contains($0.path) }
+            var info = [String(localized: "\(tracks.count) Einträge aus der Collection"),
+                        String(localized: "\(refs) Verweise in Playlists fallen weg")]
+            if trash {
+                info.append(String(localized: "\(files.count) Dateien in den Papierkorb"))
+                let cloud = files.filter { CloudPaths.isCloudBacked($0.path) }.count
+                if cloud > 0 { info.append(String(localized: "\(cloud) davon im Cloud-Ordner: nur der lokale Platzhalter geht in den Papierkorb")) }
+            } else {
+                info.append(String(localized: "Dateien bleiben liegen"))
+            }
+            let title = trash ? String(localized: "Aus Collection entfernen + Dateien?") : String(localized: "Aus Collection entfernen?")
+            self.ensureWrite(store) {
+                CheckConfirm.ask(title, info: info, sample: tracks.map { self.line($0) },
+                                 action: trash ? String(localized: "Entfernen + Papierkorb") : String(localized: "Entfernen")) {
+                    store.writeCollection(CollectionMerge.removalJob(keys: keys)) { r in
+                        guard let r, r.changed else { return }
+                        let gone = Set(r.removed)
+                        self.findings.removeAll { f in f.key.map { gone.contains($0) } ?? false }
+                        if trash { Self.trash(tracks.filter { gone.contains($0.key) }.map(\.path)) }
+                    }
                 }
             }
         }

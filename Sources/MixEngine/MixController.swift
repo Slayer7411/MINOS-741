@@ -2700,9 +2700,10 @@ public final class MixController: @unchecked Sendable {
             if tickCount % 50 == 0, !loads.isEmpty { (expired, slow) = expiredLoads() }
             return tickCount % 6 == 0 ? tickHandlers : []
         }
-        // Host-Ereignisse der Plugins aus dem Audio-Thread (Zuhörer, Umbau): außerhalb der Sperre, alle 10 ms
+        // Host-Ereignisse der Plugins aus dem Audio-Thread (Zuhörer, Umbau): alle 10 ms auf der Ereignis-Queue, der Takt wartet nie
         if tickCount % 2 == 0 {
-            for p in locked({ installed.flatMap { $0.flatMap { $0 } }.compactMap { $0 } }) { p.drainHostEvents() }
+            let vst = locked { installed.flatMap { $0.flatMap { $0 } }.compactMap { $0 }.filter(\.isVST3) }
+            if !vst.isEmpty { pluginEvents.async { for p in vst { p.drainHostEvents() } } }
         }
         for l in expired {
             failLoad(l.track, l.deck, seq: l.seq, reason: String(localized: "keine Audiodaten (Cloud-Datei nicht geladen, Lesen hängt?)"), timeout: l.timeout)

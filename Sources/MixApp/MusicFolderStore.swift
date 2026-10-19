@@ -245,7 +245,7 @@ struct MusicFolderRow: View, SourceMenus {
             }, accepts: { strings in
                 g != "" && strings.contains { SidebarDrag.item($0)?.group == g }
             }) { strings in
-                ui.reorder(strings, before: key, group: g, ids: siblingKeys(g))
+                ui.reorder(strings, to: key, group: g, ids: siblingKeys(g))
             }
             .contextMenu {
                 SidebarMarkMenu(ui: ui, key: key)

@@ -14,28 +14,55 @@ import Testing
     #expect(a.sorted("other", ["x", "y"]) == ["x", "y"])
 }
 
-@Test func sidebarMoveInsertsBeforeTargetAndStoresWholeLevel() {
+@Test func sidebarMoveUpInsertsBeforeTargetAndStoresWholeLevel() {
     var a = SidebarArrange()
     let ids = ["a", "b", "c", "d"]
-    a.move("d", before: "b", in: "m:", ids: ids)
+    a.move("d", to: "b", in: "m:", ids: ids)   // nach oben: davor
     #expect(a.sorted("m:", ids) == ["a", "d", "b", "c"])
     #expect(a.order["m:"] == ["a", "d", "b", "c"])
 
     // ans Ende, wenn kein Ziel
-    a.move("a", before: nil, in: "m:", ids: ids)
+    a.move("a", to: nil, in: "m:", ids: ids)
     #expect(a.sorted("m:", ids) == ["d", "b", "c", "a"])
 
     // Ziel unbekannt: ans Ende
-    a.move("b", before: "zz", in: "m:", ids: ids)
+    a.move("b", to: "zz", in: "m:", ids: ids)
     #expect(a.sorted("m:", ids).last == "b")
+}
+
+@Test func sidebarMoveDownInsertsAfterTarget() {
+    var a = SidebarArrange()
+    let ids = ["a", "b", "c", "d"]
+    a.move("a", to: "c", in: "m:", ids: ids)   // nach unten: dahinter
+    #expect(a.sorted("m:", ids) == ["b", "c", "a", "d"])
+}
+
+@Test func sidebarMoveReachesFirstAndLastPositions() {
+    var a = SidebarArrange()
+    let ids = ["a", "b", "c", "d"]
+    // erster ans Ende (Ziel = letzter, nach unten)
+    a.move("a", to: "d", in: "m:", ids: ids)
+    #expect(a.sorted("m:", ids) == ["b", "c", "d", "a"])
+    // letzter nach ganz oben (Ziel = erster, nach oben)
+    a.move("a", to: "b", in: "m:", ids: ids)
+    #expect(a.sorted("m:", ids) == ["a", "b", "c", "d"])
+}
+
+@Test func sidebarMoveNeighbourSwapsBothDirections() {
+    var a = SidebarArrange()
+    let ids = ["a", "b", "c", "d"]
+    a.move("a", to: "b", in: "m:", ids: ids)   // a nach unten, hinter b
+    #expect(a.sorted("m:", ids) == ["b", "a", "c", "d"])
+    a.move("a", to: "b", in: "m:", ids: ids)   // a nach oben, vor b: zurück
+    #expect(a.sorted("m:", ids) == ["a", "b", "c", "d"])
 }
 
 @Test func sidebarMoveIgnoresNoOpAndForeignIds() {
     var a = SidebarArrange()
     let ids = ["a", "b"]
-    a.move("a", before: "a", in: "m:", ids: ids)
+    a.move("a", to: "a", in: "m:", ids: ids)
     #expect(a.order.isEmpty)
-    a.move("x", before: "a", in: "m:", ids: ids)   // nicht in der Ebene
+    a.move("x", to: "a", in: "m:", ids: ids)   // nicht in der Ebene
     #expect(a.order.isEmpty)
 }
 
@@ -53,7 +80,7 @@ import Testing
 
 @Test func sidebarArrangeRoundTripAndOldDataDecodes() throws {
     var a = SidebarArrange()
-    a.move("b", before: "a", in: "c:", ids: ["a", "b"])
+    a.move("b", to: "a", in: "c:", ids: ["a", "b"])
     a.setMark(.purple, for: "o:ABC")
     let data = try JSONEncoder().encode(a)
     #expect(try JSONDecoder().decode(SidebarArrange.self, from: data) == a)
@@ -93,16 +120,17 @@ import Testing
     var a = SidebarArrange()
     a.setMark(.blue, for: "mf:/Musik")
     a.order["m:"] = ["mf:/Musik"]
-    a.moveSection(.playlists, before: .collection)
+    // nach oben: vor das Ziel
+    a.moveSection(.playlists, to: .collection)
     #expect(a.sectionOrder() == [.playlists, .collection, .folders, .explorer])
-    // ans Ende ohne Ziel
-    a.moveSection(.playlists, before: nil)
+    // ans Ende: letzter Abschnitt steht als Ziel, erster wird dahinter gesetzt
+    a.moveSection(.playlists, to: nil)
     #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
-    // Abschnitt vor sich selbst: keine Änderung der Reihenfolge
-    a.moveSection(.explorer, before: .explorer)
+    // Abschnitt auf sich selbst: keine Änderung
+    a.moveSection(.explorer, to: .explorer)
     #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
 
-    a.moveSection(.explorer, before: .collection)
+    a.moveSection(.explorer, to: .collection)
     a.resetSectionOrder()
     #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
     // andere Ebenen und Farben bleiben
@@ -110,9 +138,29 @@ import Testing
     #expect(a.mark("mf:/Musik") == .blue)
 }
 
+@Test func sidebarFirstSectionReachesEndAndLastReachesTop() {
+    var a = SidebarArrange()
+    // erster nach unten an das Ende (Ziel = letzter Abschnitt)
+    a.moveSection(.collection, to: .playlists)
+    #expect(a.sectionOrder() == [.folders, .explorer, .playlists, .collection])
+    // letzter ganz nach oben (Ziel = erster Abschnitt)
+    a.moveSection(.collection, to: .folders)
+    #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
+    a.moveSection(.playlists, to: .collection)
+    #expect(a.sectionOrder() == [.playlists, .collection, .folders, .explorer])
+}
+
+@Test func sidebarSectionNeighbourSwapsBothDirections() {
+    var a = SidebarArrange()
+    a.moveSection(.collection, to: .folders)   // nach unten, hinter folders
+    #expect(a.sectionOrder() == [.folders, .collection, .explorer, .playlists])
+    a.moveSection(.collection, to: .folders)   // nach oben, vor folders: zurück
+    #expect(a.sectionOrder() == [.collection, .folders, .explorer, .playlists])
+}
+
 @Test func sidebarSectionOrderRoundTrip() throws {
     var a = SidebarArrange()
-    a.moveSection(.explorer, before: .folders)
+    a.moveSection(.explorer, to: .folders)
     let data = try JSONEncoder().encode(a)
     let b = try JSONDecoder().decode(SidebarArrange.self, from: data)
     #expect(b == a)

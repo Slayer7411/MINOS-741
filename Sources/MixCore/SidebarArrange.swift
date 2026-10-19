@@ -29,12 +29,18 @@ public struct SidebarArrange: Equatable, Sendable {
         return known + ids.filter { rank[$0] == nil }
     }
 
-    /// `id` vor `target` in die Ebene `group` setzen (`target` nil oder unbekannt: ans Ende). `ids` sind die aktuellen
+    /// `id` auf `target` in der Ebene `group` setzen (`target` nil oder unbekannt: ans Ende). Nach unten (id steht über
+    /// dem Ziel) hinter das Ziel, nach oben davor; so erreicht jede Position auch das Ende. `ids` sind die aktuellen
     /// Schlüssel der Ebene in natürlicher Reihenfolge; die Ebene wird danach vollständig gespeichert
-    public mutating func move(_ id: String, before target: String?, in group: String, ids: [String]) {
+    public mutating func move(_ id: String, to target: String?, in group: String, ids: [String]) {
         guard id != target, ids.contains(id) else { return }
-        var list = sorted(group, ids).filter { $0 != id }
-        if let target, let i = list.firstIndex(of: target) { list.insert(id, at: i) } else { list.append(id) }
+        var list = sorted(group, ids)
+        guard let from = list.firstIndex(of: id) else { return }
+        // Einsetzen an der alten Stelle des Ziels: steht id darüber, rückt das Ziel beim Entfernen nach vorn (id dahinter),
+        // sonst bleibt es (id davor)
+        let t = target.flatMap { list.firstIndex(of: $0) }
+        list.remove(at: from)
+        list.insert(id, at: t ?? list.count)
         order[group] = list
     }
 
@@ -59,9 +65,9 @@ extension SidebarArrange {
         sorted(Self.sectionGroup, SidebarSection.allCases.map(\.rawValue)).compactMap(SidebarSection.init(rawValue:))
     }
 
-    /// Abschnitt `s` vor `target` setzen (nil: ans Ende)
-    public mutating func moveSection(_ s: SidebarSection, before target: SidebarSection?) {
-        move(s.rawValue, before: target?.rawValue, in: Self.sectionGroup, ids: SidebarSection.allCases.map(\.rawValue))
+    /// Abschnitt `s` auf `target` setzen (nil: ans Ende); Richtung wie bei `move`
+    public mutating func moveSection(_ s: SidebarSection, to target: SidebarSection?) {
+        move(s.rawValue, to: target?.rawValue, in: Self.sectionGroup, ids: SidebarSection.allCases.map(\.rawValue))
     }
 
     /// Reihenfolge der Abschnitte auf die natürliche zurücksetzen (Farben und andere Ebenen bleiben)

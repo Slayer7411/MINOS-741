@@ -81,7 +81,7 @@ extension View {
             .treeDropZone(ui.regions, name: "section \(s.rawValue)", highlight: { on in
                 ui.sidebarTarget = on ? s.rawValue : (ui.sidebarTarget == s.rawValue ? nil : ui.sidebarTarget)
             }, accepts: { SidebarSection.carries($0) }) { strings in
-                ui.reorderSection(strings, before: s)
+                ui.reorderSection(strings, to: s)
             }
     }
 
@@ -115,9 +115,9 @@ extension PlaylistTreeUI {
     /// Abschnitte oben in Anzeigeordnung
     var sections: [SidebarSection] { arrange.sectionOrder() }
 
-    /// Abschnitt vor `target` ziehen (nur Abschnitte; sonst false)
-    func reorderSection(_ strings: [String], before target: SidebarSection) -> Bool {
-        reorder(strings, before: target.rawValue, group: SidebarArrange.sectionGroup, ids: SidebarSection.allCases.map(\.rawValue))
+    /// Abschnitt auf `target` ziehen, Richtung wie bei `SidebarArrange.move` (nur Abschnitte; sonst false)
+    func reorderSection(_ strings: [String], to target: SidebarSection) -> Bool {
+        reorder(strings, to: target.rawValue, group: SidebarArrange.sectionGroup, ids: SidebarSection.allCases.map(\.rawValue))
     }
 
     func resetSectionOrder() {

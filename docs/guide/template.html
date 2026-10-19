@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>User Guide · MINOS-741</title>
+<meta name="description" content="MINOS-741 user guide: install, decks, mixer, fx, library, settings, controllers.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+:root {
+  --void:#040303; --chitin:#0d0a0a; --panel:#110d0d; --bone:#e6e1da; --mute:#9b8f86; --low:#6f645c;
+  --red:#d21f26; --red-dim:#5a1215; --hair:#2a1113; --ash:#1c1617; --purple:#8f6bd8;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, monospace; --serif:"Cinzel", Georgia, serif;
+  color-scheme: dark;
+}
+* { box-sizing:border-box }
+html { scroll-padding-top:72px }
+body { margin:0; background:var(--void); color:var(--bone); font:14px/1.65 var(--mono) }
+a { color:var(--bone); text-decoration-color:var(--red); text-underline-offset:3px }
+code { font:inherit; color:var(--bone); background:var(--ash); padding:0 .35em; border:1px solid var(--hair) }
+i { font-style:normal }
+
+.top { position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:14px; height:52px;
+  padding:0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px));
+  background:var(--chitin); border-bottom:1px solid var(--hair) }
+.brand { font:600 15px var(--serif); letter-spacing:.22em; text-decoration:none; white-space:nowrap }
+.brand b { color:var(--red); font:600 12px var(--mono); letter-spacing:0; margin-right:6px }
+.tag { font-size:11px; color:var(--low); border:1px solid var(--hair); padding:2px 8px; letter-spacing:.08em }
+.cur { display:flex; align-items:baseline; gap:8px; min-width:0; color:var(--mute); font-size:12px; letter-spacing:.08em }
+.cur b { color:var(--red); font-size:18px }
+.cur span { white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.search { margin-left:auto; position:relative; display:flex; align-items:center; gap:8px }
+.search label { font-size:11px; color:var(--low); letter-spacing:.1em }
+.search input { width:min(320px, 40vw); background:var(--void); color:var(--bone); border:1px solid var(--hair);
+  font:13px var(--mono); padding:6px 10px; outline:none }
+.search input:focus { border-color:var(--red) }
+.results { position:absolute; right:0; top:40px; width:min(460px, 92vw); max-height:70vh; overflow:auto;
+  background:var(--chitin); border:1px solid var(--hair); box-shadow:0 12px 40px #000c }
+.results a { display:block; padding:9px 12px; border-bottom:1px solid var(--ash); text-decoration:none }
+.results a:hover, .results a.on { background:var(--ash) }
+.results small { display:block; color:var(--low); font-size:11px; letter-spacing:.06em }
+.results p { margin:2px 0 0; color:var(--mute); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.results mark { background:none; color:var(--purple) }
+.menu { display:none; background:none; border:1px solid var(--hair); color:var(--bone); font:12px var(--mono); padding:5px 9px }
+
+.wrap { display:grid; grid-template-columns:270px minmax(0,1fr); max-width:1440px; margin:0 auto }
+.side { position:sticky; top:52px; height:calc(100vh - 52px); overflow:auto; padding:18px 14px 40px;
+  border-right:1px solid var(--hair); background:var(--void) }
+.grp { margin:20px 0 6px; font-size:10.5px; color:var(--red); letter-spacing:.16em }
+.grp::before { content:"— " }
+.ch { display:flex; gap:10px; padding:7px 10px; margin:3px 0; border:1px solid var(--ash); background:var(--chitin);
+  text-decoration:none; font-size:11.5px; font-weight:600; letter-spacing:.06em }
+.ch i { color:var(--low); min-width:18px }
+.ch:hover { border-color:var(--hair) }
+.ch.on { border-color:var(--red); color:var(--bone) }
+.ch.on i { color:var(--red) }
+.subs { display:none; padding:4px 0 8px 12px }
+.subs.on { display:block }
+.sec { display:flex; gap:10px; padding:3px 8px; font-size:12px; color:var(--mute); text-decoration:none }
+.sec i { color:var(--low); min-width:30px; font-size:11px }
+.sec:hover, .sec.on { color:var(--bone) }
+.sec.on i { color:var(--red) }
+
+main { min-width:0; padding:28px max(16px, env(safe-area-inset-right, 0px)) 80px 40px }
+.chap { display:none; max-width:900px }
+.chap.on { display:block }
+.chead { border-bottom:1px solid var(--hair); padding-bottom:14px; margin-bottom:22px }
+.kicker { font-size:11px; color:var(--red); letter-spacing:.16em }
+h1 { font:600 clamp(24px, 4vw, 36px)/1.15 var(--serif); letter-spacing:.12em; margin:6px 0 0; text-wrap:balance }
+h1 b { color:var(--red); font:600 .55em var(--mono); letter-spacing:0; margin-right:.6em; vertical-align:middle }
+h2 { font:600 15px var(--mono); letter-spacing:.04em; margin:0 0 10px; display:flex; gap:12px; align-items:baseline }
+h2 i { color:var(--red); font-size:12px }
+h4 { font:600 12px var(--mono); letter-spacing:.12em; color:var(--mute); text-transform:uppercase; margin:18px 0 6px }
+article { padding:22px 0; border-top:1px solid var(--ash); scroll-margin-top:64px }
+article.hit h2 { color:var(--purple) }
+p, li { color:#cfc8bf; max-width:76ch }
+p { margin:0 0 10px }
+ul, ol { margin:0 0 12px; padding-left:20px }
+li { margin:3px 0 }
+li::marker { color:var(--red) }
+pre { background:var(--chitin); border:1px solid var(--hair); padding:12px 14px; overflow-x:auto; font:12.5px/1.55 var(--mono); color:var(--bone) }
+.tw { overflow-x:auto; margin:6px 0 14px }
+table { border-collapse:collapse; font-size:12.5px; min-width:420px }
+th { text-align:left; color:var(--low); font-weight:500; letter-spacing:.08em; font-size:11px; border-bottom:1px solid var(--hair); padding:6px 14px 6px 0 }
+td { border-bottom:1px solid var(--ash); padding:6px 14px 6px 0; vertical-align:top; color:#cfc8bf }
+td:first-child { color:var(--bone); white-space:nowrap }
+.lead { font-size:15px; color:var(--bone); max-width:68ch }
+.intro { margin-bottom:8px }
+.toc { list-style:none; padding:0; margin:14px 0 6px; columns:2 260px; column-gap:24px }
+.toc a { text-decoration:none; color:var(--mute); font-size:12.5px }
+.toc a:hover { color:var(--bone) }
+.toc i { color:var(--red); display:inline-block; min-width:38px; font-size:11px }
+.cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:10px; margin:22px 0 }
+.card { display:grid; gap:2px; padding:12px 14px; background:var(--chitin); border:1px solid var(--ash); text-decoration:none; font-size:12px; font-weight:600; letter-spacing:.06em }
+.card span { font-size:10px; color:var(--low); letter-spacing:.14em; font-weight:400 }
+.card b { color:var(--red); font-size:16px }
+.card:hover { border-color:var(--red) }
+.meta { color:var(--low); font-size:12px }
+
+.fig { margin:6px 0 24px }
+.shot { position:relative; border:1px solid var(--hair); background:#000; line-height:0 }
+.shot img { width:100%; height:auto; display:block }
+.pin { position:absolute; transform:translate(-50%, -50%); width:22px; height:22px; border-radius:50%; padding:0;
+  background:var(--red); color:var(--bone); border:1.5px solid var(--bone); font:600 11px/19px var(--mono);
+  box-shadow:0 0 0 3px #0008; cursor:pointer }
+.pin.on, .pin:hover { background:var(--bone); color:var(--red); z-index:2 }
+figcaption { font-size:11px; color:var(--low); letter-spacing:.08em; margin:8px 0 10px }
+.legend { list-style:none; padding:0; margin:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:4px 18px }
+.legend li { display:flex; gap:10px; align-items:baseline; font-size:12.5px; color:var(--mute); padding:3px 4px; margin:0; max-width:none }
+.legend li b { color:var(--bone); font-weight:600; margin-right:4px }
+.legend li.on { background:var(--ash) }
+.num { flex:none; width:20px; height:20px; border-radius:50%; background:var(--red); color:var(--bone); font:600 10.5px/20px var(--mono); text-align:center }
+.pn { display:flex; justify-content:space-between; gap:12px; margin-top:34px; padding-top:16px; border-top:1px solid var(--hair); font-size:12px }
+.pn a { text-decoration:none; color:var(--mute) }
+.pn a:hover { color:var(--bone) }
+.foot { position:fixed; bottom:0; left:0; right:0; display:flex; justify-content:space-between; padding:5px max(16px, env(safe-area-inset-right, 0px)) 5px max(16px, env(safe-area-inset-left, 0px));
+  font-size:10.5px; color:var(--low); background:var(--chitin); border-top:1px solid var(--hair); letter-spacing:.08em; z-index:10 }
+.foot b { color:var(--red); font-weight:500 }
+
+@media (max-width: 860px) {
+  .wrap { grid-template-columns:minmax(0,1fr) }
+  .side { position:fixed; left:0; top:52px; width:min(300px, 86vw); z-index:15; transform:translateX(-102%); transition:transform .18s }
+  body.nav .side { transform:none; box-shadow:20px 0 40px #000c }
+  .menu { display:block }
+  .tag, .cur, .search label { display:none }
+  main { padding-left:max(16px, env(safe-area-inset-left, 0px)) }
+  .search input { width:min(220px, 46vw) }
+  .pin { width:18px; height:18px; font-size:9.5px; line-height:15px }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <button class="menu" id="menu" aria-label="chapters">☰</button>
+  <a class="brand" href="#c0"><b>◆</b>MINOS-741</a>
+  <span class="tag">USER GUIDE</span>
+  <div class="cur" id="cur"></div>
+  <div class="search">
+    <label for="q">SEARCH</label>
+    <input id="q" type="search" placeholder="find a control or topic" autocomplete="off">
+    <div class="results" id="res" hidden></div>
+  </div>
+</header>
+<div class="wrap">
+  <nav class="side" id="side">
+{{NAV}}
+  </nav>
+  <main id="main">
+{{PAGES}}
+  </main>
+</div>
+<div class="foot"><span>MINOS-741 · USER GUIDE · made by 741</span><span><b>{{VERSION}}</b> · {{CHAPTERS}} CHAPTERS</span></div>
+<script>
+const IDX = {{INDEX}};
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+
+function show(id, scroll) {
+  const target = document.getElementById(id) || document.getElementById("c0");
+  const chap = target.closest(".chap");
+  $$(".chap").forEach(c => c.classList.toggle("on", c === chap));
+  const cid = chap.dataset.ch;
+  $$(".ch").forEach(a => a.classList.toggle("on", a.dataset.ch === cid));
+  $$(".subs").forEach(s => s.classList.toggle("on", s.dataset.for === cid));
+  $$(".sec").forEach(a => a.classList.toggle("on", a.getAttribute("href") === "#" + id));
+  const h = chap.querySelector("h1");
+  $("#cur").innerHTML = cid === "c0" ? "" : `<b>${h.querySelector("b").textContent}</b><span>CHAPTER · ${h.lastChild.textContent}</span>`;
+  document.title = (cid === "c0" ? "User Guide" : h.lastChild.textContent) + " · MINOS-741";
+  if (scroll !== false) {
+    if (target === chap) window.scrollTo(0, 0); else target.scrollIntoView();
+  }
+  document.body.classList.remove("nav");
+}
+addEventListener("hashchange", () => show(location.hash.slice(1)));
+show(location.hash.slice(1) || "c0");
+
+$("#menu").onclick = () => document.body.classList.toggle("nav");
+
+// pins <-> legend
+$$(".fig").forEach(f => {
+  const set = (n, on) => f.querySelectorAll(`[data-n="${n}"]`).forEach(e => e.classList.toggle("on", on));
+  f.querySelectorAll("[data-n]").forEach(e => {
+    e.addEventListener("mouseenter", () => set(e.dataset.n, true));
+    e.addEventListener("mouseleave", () => set(e.dataset.n, false));
+    e.addEventListener("click", () => { const on = !e.classList.contains("sticky");
+      f.querySelectorAll(".sticky").forEach(x => x.classList.remove("sticky", "on"));
+      if (on) f.querySelectorAll(`[data-n="${e.dataset.n}"]`).forEach(x => x.classList.add("sticky", "on")); });
+  });
+});
+
+// search
+const q = $("#q"), res = $("#res");
+let sel = -1;
+const esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function find(s) {
+  const words = s.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [];
+  return IDX.map(e => {
+    const t = e.t.toLowerCase();
+    let score = 0;
+    for (const w of words) {
+      if (t.includes(w)) score += 10; else if (e.x.includes(w)) score += 1; else return null;
+    }
+    return [score, e];
+  }).filter(Boolean).sort((a, b) => b[0] - a[0]).slice(0, 14).map(r => r[1]);
+}
+function snippet(e, w) {
+  const i = e.x.indexOf(w);
+  if (i < 0) return "";
+  const a = Math.max(0, i - 40);
+  return (a ? "…" : "") + esc(e.x.slice(a, i)) + "<mark>" + esc(e.x.slice(i, i + w.length)) + "</mark>" + esc(e.x.slice(i + w.length, i + 90));
+}
+q.addEventListener("input", () => {
+  const s = q.value.trim(), hits = find(s);
+  sel = -1;
+  if (!s) { res.hidden = true; return; }
+  const w = s.toLowerCase().split(/\s+/)[0];
+  res.innerHTML = hits.length ? hits.map(e => `<a href="#${e.id}"><small>${esc(e.c)}</small>${esc(e.t)}<p>${snippet(e, w)}</p></a>`).join("")
+    : `<a><small>no match</small>try another word</a>`;
+  res.hidden = false;
+});
+q.addEventListener("keydown", ev => {
+  const links = [...res.querySelectorAll("a[href]")];
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    sel = Math.max(0, Math.min(links.length - 1, sel + (ev.key === "ArrowDown" ? 1 : -1)));
+    links.forEach((a, i) => a.classList.toggle("on", i === sel));
+  } else if (ev.key === "Enter" && links.length) {
+    location.hash = links[Math.max(0, sel)].getAttribute("href"); res.hidden = true; q.blur();
+  } else if (ev.key === "Escape") { q.value = ""; res.hidden = true; }
+});
+res.addEventListener("click", e => { if (e.target.closest("a[href]")) res.hidden = true; });
+document.addEventListener("click", e => { if (!e.target.closest(".search")) res.hidden = true; });
+document.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "k") { e.preventDefault(); q.focus(); } });
+</script>
+</body>
+</html>

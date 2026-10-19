@@ -842,6 +842,7 @@ struct TagPicker: View {
 struct SourceTree: View {
     @Binding var selection: BrowserSource
     @State private var treeUI = PlaylistTreeUI()
+    @Environment(MixModel.self) private var mix
 
     // Zeilen in eigenen Ansichten: ein Quellenwechsel wertet nur die Auswahl der Liste neu aus, nicht alle Zeilen
     // (Baum bleibt auch ausgeblendet in der Ansicht, siehe BrowserPane)
@@ -861,6 +862,12 @@ struct SourceTree: View {
         .environment(treeUI)
         .modifier(PlaylistTreeDialogs(ui: treeUI, selection: $selection))
         .onChange(of: selection) { if !treeUI.marked.contains(selection) { treeUI.marked = [selection] } }
+        // Reihenfolge und Farben aus den Einstellungen; eigene Änderungen gehen (gesammelt) dorthin zurück
+        .onAppear {
+            treeUI.arrange = mix.prefs.ui.sidebar
+            treeUI.persist = { [mix] a in mix.prefs.ui.sidebar = a }
+        }
+        .onChange(of: mix.prefs.ui.sidebar) { _, new in treeUI.arrange = new }
     }
 
     /// Auswahl aus der Liste übernehmen: ein Eintrag = die Quelle; bei mehreren nimmt die Quelle den neu dazugekommenen

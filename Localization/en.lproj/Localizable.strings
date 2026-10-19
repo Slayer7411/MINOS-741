@@ -2230,3 +2230,7 @@
 "%lld ungekoppelter Link-Teilnehmer ignoriert" = "%lld unpaired Link peer ignored";
 "Zwei-Mac: der Session-Partner ist schon gekoppelt (nur einer)" = "Two Macs: the session partner is already paired (only one)";
 "Zwei-Mac: die B2B-Gruppe ist voll (höchstens 8 Macs)" = "Two Macs: the B2B group is full (at most 8 Macs)";
+"Orange" = "Orange";
+"Gelb" = "Yellow";
+"Lila" = "Purple";
+"Grau" = "Grey";

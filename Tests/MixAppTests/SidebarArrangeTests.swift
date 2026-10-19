@@ -14,7 +14,7 @@ import MixCore
 
 @MainActor @Test func prefsSidebarRoundTrip() throws {
     var p = AppPrefs.decode(Data(#"{"ui": {"zoom": 1.1}}"#.utf8))
-    p.ui.sidebar.move("cu:B", before: "cu:A", in: "c:", ids: ["cu:A", "cu:B"])
+    p.ui.sidebar.move("cu:B", to: "cu:A", in: "c:", ids: ["cu:A", "cu:B"])
     p.ui.sidebar.setMark(.green, for: "mf:/Users/x/Musik")
     let again = AppPrefs.decode(try JSONEncoder().encode(p))
     #expect(again.ui.sidebar == p.ui.sidebar)

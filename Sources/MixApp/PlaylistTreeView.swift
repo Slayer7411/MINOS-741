@@ -214,12 +214,12 @@ final class PlaylistTreeUI {
         commit(a)
     }
 
-    /// Umordnen: Zug aus `strings` vor `target` in die Ebene `group` (nur eigene Ebene; sonst false)
-    func reorder(_ strings: [String], before target: String, group: String, ids: [String]) -> Bool {
+    /// Umordnen: Zug aus `strings` auf `target` in die Ebene `group` (nur eigene Ebene; sonst false)
+    func reorder(_ strings: [String], to target: String, group: String, ids: [String]) -> Bool {
         guard let drag = strings.lazy.compactMap(SidebarDrag.item).first(where: { $0.group == group }),
               drag.key != target else { return false }
         var a = arrange
-        a.move(drag.key, before: target, in: group, ids: ids)
+        a.move(drag.key, to: target, in: group, ids: ids)
         commit(a)
         return true
     }
@@ -257,7 +257,7 @@ struct PlaylistsSection: View, SourceMenus {
                     }, accepts: { strings in
                         strings.contains { TrackDrag.key($0) != nil || SidebarDrag.item($0)?.group == c.group }
                     }) { strings in
-                        ui.reorder(strings, before: c.key, group: c.group, ids: c.siblings) || dropCollection(node, strings)
+                        ui.reorder(strings, to: c.key, group: c.group, ids: c.siblings) || dropCollection(node, strings)
                     }
                     .contextMenu {
                         SidebarMarkMenu(ui: ui, key: c.key)
@@ -293,9 +293,16 @@ struct PlaylistsSection: View, SourceMenus {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(ui.rootTargeted ? Theme.chitinRaised : .clear)
-                .contextMenu { PlaylistNewMenu(parent: nil, selection: $selection) }
+                // Kopf ziehbar zum Umordnen der Abschnitte; die Ablage unten nimmt beides an
+                .sectionDrag(ui, .playlists)
+                .contextMenu {
+                    PlaylistNewMenu(parent: nil, selection: $selection)
+                    Divider()
+                    SectionResetButton(ui: ui)
+                }
                 .treeDropZone(ui.regions, name: "tree drop", highlight: { ui.rootTargeted = $0 },
-                              accepts: { $0.contains { TreeDrag.item($0) != nil || TrackDrag.key($0) != nil } }) { strings in
+                              accepts: { $0.contains { TreeDrag.item($0) != nil || TrackDrag.key($0) != nil } || SidebarSection.carries($0) }) { strings in
+                    if ui.reorderSection(strings, to: .playlists) { return true }
                     if let id = strings.compactMap(TreeDrag.item).first {
                         store.editPlaylists(String(localized: "Verschieben")) { $0.move(id, into: nil) }
                         return true

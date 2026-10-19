@@ -1158,6 +1158,7 @@
 "Layout" = "Layout";
 "Collection" = "Collection";
 "Standard-Reihenfolge" = "Default order";
+"Reihenfolge zurücksetzen" = "Reset order";
 "DAW-Brücke aus (⌘, -> BROWSER)" = "DAW bridge off (⌘, -> BROWSER)";
 "trennzeichen: '%@' (einstellbar unter ⌘, → tags)" = "separators: '%@' (set under ⌘, → tags)";
 "Vorbereiten" = "Prepare";

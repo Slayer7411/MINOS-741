@@ -183,6 +183,8 @@ struct MusicFolderTree: View {
             }
         } label: {
             MusicFolderRow.label("▸", "MUSIC FOLDERS")
+                .sectionHeader(ui, .folders)
+                .contextMenu { SectionResetButton(ui: ui) }
         }
         .onAppear { expandToSelection() }
         .onChange(of: selection) { expandToSelection() }
@@ -243,7 +245,7 @@ struct MusicFolderRow: View, SourceMenus {
             }, accepts: { strings in
                 g != "" && strings.contains { SidebarDrag.item($0)?.group == g }
             }) { strings in
-                ui.reorder(strings, before: key, group: g, ids: siblingKeys(g))
+                ui.reorder(strings, to: key, group: g, ids: siblingKeys(g))
             }
             .contextMenu {
                 SidebarMarkMenu(ui: ui, key: key)
@@ -519,6 +521,7 @@ enum BrowserShot {
 /// EXPLORER: Laufwerke (USB-Sticks, externe Platten, Netz) und Benutzerordner wie im Finder. Ordner wie bei
 /// MUSIC FOLDERS (Unterordner aufklappen, Audiodateien in der Liste). Laufwerke folgen dem Ein-/Ausstecken
 struct ExplorerTree: View {
+    @Environment(PlaylistTreeUI.self) private var ui
     @Binding var selection: BrowserSource
     @State private var open = false
     @State private var expanded: Set<String> = []
@@ -569,6 +572,8 @@ struct ExplorerTree: View {
             }
         } label: {
             MusicFolderRow.label("⌂", "EXPLORER")
+                .sectionHeader(ui, .explorer)
+                .contextMenu { SectionResetButton(ui: ui) }
         }
         .onAppear { FileStatCache.shared.refresh(Self.placePaths) { placesRevision += 1 } }
         .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didMountNotification)) { _ in volumes = Self.mountedVolumes() }

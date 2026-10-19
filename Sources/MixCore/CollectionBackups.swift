@@ -73,22 +73,26 @@ public enum CollectionBackups {
         let data: Data
         do { data = try Data(contentsOf: backup) } catch { throw Failure.invalid("Sicherung nicht lesbar") }
         let tracks = try validate(data)
-        var previous: URL?
-        let fm = FileManager.default
-        if fm.fileExists(atPath: collection.path) {
-            let dir = folder(for: collection)
-            if let p = try CollectionWriter.backup(collection, into: dir, now: now, minInterval: 0) {
-                previous = p
-            } else {
-                // gleiche Sekunde wie eine Sicherung: ist sie der bisherige Stand, reicht sie; sonst nichts ersetzen
-                let same = dir.appendingPathComponent("collection_\(CollectionWriter.backupFormatter.string(from: now)).nml")
-                guard fm.fileExists(atPath: same.path), (try? Data(contentsOf: same)) == (try? Data(contentsOf: collection)) else {
-                    throw Failure.previousNotBacked
+        // Sperre wie beim Schreiben der Collection: kein Schreiben dazwischen
+        return try CollectionWriter.withLock(collection) {
+            var previous: URL?
+            let fm = FileManager.default
+            if fm.fileExists(atPath: collection.path) {
+                let dir = folder(for: collection)
+                if let p = try CollectionWriter.backup(collection, into: dir, now: now, minInterval: 0) {
+                    previous = p
+                } else {
+                    // gleiche Sekunde wie eine Sicherung: ist sie der bisherige Stand, reicht sie; sonst nichts ersetzen
+                    let same = dir.appendingPathComponent("collection_\(CollectionWriter.backupFormatter.string(from: now)).nml")
+                    // beide Dateien müssen lesbar sein: nil == nil wäre sonst "gleich" und die Datei würde ungeprüft ersetzt
+                    var isSame = false
+                    if fm.fileExists(atPath: same.path) { isSame = try Data(contentsOf: same) == Data(contentsOf: collection) }
+                    guard isSame else { throw Failure.previousNotBacked }
+                    previous = same
                 }
-                previous = same
             }
+            try CollectionWriter.replaceAtomically(collection, with: data)
+            return (tracks, previous)
         }
-        try CollectionWriter.replaceAtomically(collection, with: data)
-        return (tracks, previous)
     }
 }

@@ -13,27 +13,33 @@ enum CollectionRestore {
         let tracks: Int?
     }
 
-    /// Sicherung `backup` über die geladene Collection setzen. `running`: prüft, ob die Collection-Software läuft
-    static func run(_ backup: URL, store: LibraryStore, running: () -> Bool = LibraryStore.collectionSoftwareRunning) -> Outcome {
+    /// Sicherung `backup` über die geladene Collection setzen. Prüfen, sichern und ersetzen laufen außerhalb des
+    /// Hauptthreads (mit der Sperre der Collection); Ergebnis und Neuladen auf dem Hauptthread.
+    /// `running`: prüft, ob die Collection-Software läuft
+    static func run(_ backup: URL, store: LibraryStore, running: () -> Bool = LibraryStore.collectionSoftwareRunning) async -> Outcome {
         let collection = store.sourceURL ?? LibraryStore.defaultNML
         if running() {
             let msg = String(localized: "Wiederherstellen abgebrochen: die Collection-Software läuft. Erst beenden, dann wiederherstellen.")
             StatusCenter.post(.warning, msg, key: "backup.restore")
             return Outcome(ok: false, message: msg, tracks: nil)
         }
-        do {
-            let r = try CollectionBackups.restore(backup, over: collection)
+        StatusCenter.post(.info, String(localized: "Collection wird aus Sicherung wiederhergestellt …"), key: "backup.restore")
+        let result = await Task.detached(priority: .utility) {
+            Result { try CollectionBackups.restore(backup, over: collection) }
+        }.value
+        switch result {
+        case let .success(r):
             store.load(collection)
             let msg = String(localized: "Collection aus Sicherung wiederhergestellt: \(r.tracks) Tracks")
             StatusCenter.post(.ok, msg, detail: r.previous.map { String(localized: "bisheriger Stand: \($0.lastPathComponent)") },
                               key: "backup.restore")
             return Outcome(ok: true, message: msg, tracks: r.tracks)
-        } catch {
+        case let .failure(error):
             let msg: String
             switch error as? CollectionBackups.Failure {
             case let .invalid(why)?: msg = String(localized: "Sicherung nicht wiederhergestellt: \(why)")
             case .previousNotBacked?: msg = String(localized: "Nicht wiederhergestellt: der bisherige Stand konnte nicht gesichert werden")
-            case nil: msg = String(localized: "Nicht wiederhergestellt: \(error.localizedDescription)")
+            case nil: msg = String(localized: "Nicht wiederhergestellt: \(String(describing: error))")
             }
             StatusCenter.post(.error, msg, key: "backup.restore")
             return Outcome(ok: false, message: msg, tracks: nil)
@@ -47,7 +53,7 @@ enum CollectionBackupWindow {
         let collection = store.sourceURL ?? LibraryStore.defaultNML
         BasicWindows.show("backups", title: "MINOS-741 Collection-Backup", size: NSSize(width: 640, height: 460)) {
             AnyView(CollectionBackupView(collection: collection) { url in
-                _ = CollectionRestore.run(url, store: store)
+                _ = await CollectionRestore.run(url, store: store)
             })
         }
     }
@@ -56,10 +62,12 @@ enum CollectionBackupWindow {
 /// Liste der Sicherungen (neueste zuerst): Datum, Größe, Trackzahl (erst beim Anzeigen gelesen)
 struct CollectionBackupView: View {
     let collection: URL
-    let restore: (URL) -> Void
+    let restore: (URL) async -> Void
     @State private var entries: [CollectionBackups.Entry] = []
     @State private var selected: String?
     @State private var tracks: [String: Int] = [:]
+    /// Wiederherstellen läuft (Hintergrund): Knopf gesperrt, Fortschritt sichtbar
+    @State private var busy = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -100,12 +108,13 @@ struct CollectionBackupView: View {
                 .overlay(Rectangle().stroke(Theme.hairline, lineWidth: 1))
             }
             HStack {
+                if busy { ProgressView().controlSize(.small) }
                 Spacer()
                 DeckButton(title: "Wiederherstellen", active: true) {
                     guard let e = entries.first(where: { $0.id == selected }) else { return }
                     confirmAndRestore(e)
                 }
-                .disabled(selected == nil)
+                .disabled(selected == nil || busy)
             }
         }
         .padding(16)
@@ -124,8 +133,12 @@ struct CollectionBackupView: View {
         a.addButton(withTitle: String(localized: "Wiederherstellen"))
         a.addButton(withTitle: String(localized: "Abbrechen"))
         guard a.runModal() == .alertFirstButtonReturn else { return }
-        restore(e.url)
-        entries = CollectionBackups.list(in: CollectionBackups.folder(for: collection))
+        busy = true
+        Task { @MainActor in
+            await restore(e.url)
+            entries = CollectionBackups.list(in: CollectionBackups.folder(for: collection))
+            busy = false
+        }
     }
 
     static func dateText(_ d: Date) -> String {

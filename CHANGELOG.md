@@ -30,6 +30,11 @@ codenames: every major version is named after a circle of hell (minos judges the
 
 ### fixed
 * MIDI clock: when the queue ran late, clock bytes were stamped at "now" and left the grid under load; the stamps now stay on the grid
+* collection file: writes are durable (temp file synced with F_FULLFSYNC before the rename, folder synced after it), so a crash or power loss cannot leave an empty collection; file permissions of the original are kept
+* collection file: writes are serialised by an advisory lock in `~/Library/Application Support/MINOS-741/locks` (not in the collection folder; 5 s wait, then a clear error instead of a lost update); the lock does not stop the other DJ program
+* collection file: restoring a backup runs off the main thread (progress shown, the window stays responsive)
+* collection file: a change by the other program between reading and replacing is detected right before the replace; MINOS reloads and re-applies its changes instead of overwriting them
+* collection file: failures that were swallowed now reach the status line: cleanup of old backups, the conflict backups (`metadata-konflikt.json`, `edits-konflikt.json`, which no longer overwrite an unreadable older file), and the comparison before a restore
 * audio: switching or reopening the output device no longer blocks the UI (up to ~0.5 s); the status line shows `Öffne Audio-Gerät …` until it is open
 * files: Explorer start folders and `Im Finder zeigen` check file existence off the main thread (cloud folders could stall the UI)
 * TIDAL login: the callback listener on port 7412 accepts IPv4 and IPv6 loopback (`127.0.0.1`, `::1`, so `localhost` works in the browser); never on other interfaces. a timeout shows a clear message (`Anmeldung abgelaufen … erneut ANMELDEN`)

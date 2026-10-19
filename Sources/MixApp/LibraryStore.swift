@@ -608,8 +608,12 @@ final class LibraryStore {
         let e = edits?.takeConflicts(current: current) ?? [:]
         guard !m.isEmpty || !e.isEmpty else { return 0 }
         if let backupDir {
-            try? ConflictBackup.save(m, to: backupDir.appendingPathComponent("metadata-konflikt.json"))
-            try? ConflictBackup.save(e, to: backupDir.appendingPathComponent("edits-konflikt.json"))
+            do { try ConflictBackup.save(m, to: backupDir.appendingPathComponent("metadata-konflikt.json")) } catch {
+                StatusCenter.post(.error, String(localized: "Konflikt-Sicherung nicht geschrieben: metadata-konflikt.json"), detail: "\(error)", key: "conflict.backup")
+            }
+            do { try ConflictBackup.save(e, to: backupDir.appendingPathComponent("edits-konflikt.json")) } catch {
+                StatusCenter.post(.error, String(localized: "Konflikt-Sicherung nicht geschrieben: edits-konflikt.json"), detail: "\(error)", key: "conflict.backup")
+            }
         }
         return Set(m.keys).union(e.keys).count
     }
@@ -732,6 +736,7 @@ final class LibraryStore {
             }
             status = msg
             StatusCenter.post(r.missing.isEmpty ? .ok : .warning, msg, detail: url.path, key: "writeback")
+            for w in r.warnings { StatusCenter.post(.warning, w, detail: url.path, key: "writeback.warning") }
             // neue / umbenannte Einträge: Liste und Playlists aus der Datei neu
             if !r.added.isEmpty || !r.moved.isEmpty { load(url) }
         case let .failure(e) where e as? CollectionWriter.Refusal == .changedOnDisk:
@@ -791,6 +796,7 @@ final class LibraryStore {
         writing = false
         switch result {
         case let .success(r):
+            for w in r.warnings { StatusCenter.post(.warning, w, detail: url.path, key: "writeback.warning") }
             entryIndex.remove(r.removed)
             entryIndex.update(r.blocks)
             if r.changed {

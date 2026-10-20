@@ -13,7 +13,7 @@ private func controller() async throws -> (MixController, URL) {
     let c = testController()
     c.load(t, deck: 0)
     c.load(t, deck: 1)
-    for _ in 0..<100 where c.trackAudio(0) == nil || c.trackAudio(1) == nil { try await Task.sleep(for: .milliseconds(20)) }
+    try await awaitLoaded(c, decks: [0, 1])
     #expect(c.trackAudio(0) != nil && c.trackAudio(1) != nil)
     c.seek(0, seconds: 1.1)   // A: Beat 2,2
     c.togglePlay(0)           // A läuft und ist Master

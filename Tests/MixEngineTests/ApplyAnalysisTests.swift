@@ -11,7 +11,7 @@ import MixEngine
     t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)]
     let c = testController()
     c.load(t, deck: 0)
-    for _ in 0..<250 where c.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+    try await awaitLoaded(c)
     #expect(c.trackAudio(0) != nil)
     var n = t
     n.bpm = 128; n.musicalKey = 3; n.keyText = Track.openKey(code: 3); n.perceivedDb = -2

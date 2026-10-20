@@ -12,7 +12,7 @@ private func controller(trim: TrackTrim = TrackTrim(start: 2, end: 20), gridEdit
     t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)]
     let c = testController()
     c.load(t, deck: 0, trim: trim, gridEdited: gridEdited)
-    for _ in 0..<100 where c.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+    try await awaitLoaded(c)
     #expect(c.trackAudio(0) != nil)
     return (c, url)
 }

@@ -16,12 +16,12 @@ private func controller(snap: Bool = true, _ edit: (inout EnginePrefs) -> Void =
         Cue(name: "Loop", kind: .loop, startMs: 20250, lengthMs: 1000, hotcue: 4),
     ]
     let c = testController()
-    var p = EnginePrefs()
+    var p = testPrefs()
     p.snap = snap
     edit(&p)
     c.setPrefs(p)
     c.load(t, deck: 0)
-    for _ in 0..<100 where c.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+    try await awaitLoaded(c)
     #expect(c.trackAudio(0) != nil)
     #expect(c.snapshot().decks[0].loopSize == 4)
     return (c, url)

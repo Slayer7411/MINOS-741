@@ -9,7 +9,7 @@ import MixDSP
 private func controller(keys: [Int] = [21, 9], cues: [Cue] = [], _ edit: (inout EnginePrefs) -> Void = { _ in }) async throws -> (MixController, URL) {
     let url = try writeWAV(rate: 44100, channels: 2, seconds: 24)
     let c = testController()
-    var p = EnginePrefs()
+    var p = testPrefs()
     edit(&p)
     c.setPrefs(p)
     for (d, k) in keys.enumerated() {
@@ -19,7 +19,7 @@ private func controller(keys: [Int] = [21, 9], cues: [Cue] = [], _ edit: (inout 
         t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1)] + cues
         c.load(t, deck: d)
     }
-    for _ in 0..<150 where keys.indices.contains(where: { c.trackAudio($0) == nil }) { try await Task.sleep(for: .milliseconds(20)) }
+    try await awaitLoaded(c, decks: Array(keys.indices))
     #expect(keys.indices.allSatisfy { c.trackAudio($0) != nil })
     return (c, url)
 }
@@ -86,14 +86,14 @@ private let loopCue = Cue(name: "Loop", kind: .loop, startMs: 4500, lengthMs: 20
 private func activeLoopController(_ mode: ActiveLoopMode = .always) async throws -> (MixController, URL) {
     let url = try writeWAV(rate: 44100, channels: 2, seconds: 24)
     let c = testController()
-    var p = EnginePrefs()
+    var p = testPrefs()
     p.activeLoopMode = mode
     c.setPrefs(p)
     var t = Track(key: url.path, path: url.path)
     t.bpm = 120
     t.cues = [Cue(name: "Grid", kind: .grid, startMs: 0, lengthMs: 0, hotcue: -1), loopCue]
     c.load(t, deck: 0, activeLoops: [4, 2])   // 2: kein Hotcue -> fällt weg
-    for _ in 0..<150 where c.trackAudio(0) == nil { try await Task.sleep(for: .milliseconds(20)) }
+    try await awaitLoaded(c)
     #expect(c.snapshot().decks[0].activeLoops == [4])
     return (c, url)
 }

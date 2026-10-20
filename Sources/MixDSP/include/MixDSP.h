@@ -133,6 +133,8 @@ void mdsp_scratch(MDEngine *e, int deck, double seconds, bool held);
 void mdsp_set_trim(MDEngine *e, int deck, double startSeconds, double endSeconds);
 
 double mdsp_position(MDEngine *e, int deck);      // Sekunden (hörbare Position)
+/// hörbare Position mit der Host-Zeit ihres Blockendes (mach-Ticks); false = ohne Stempel (Sprung steht an, nie gerechnet)
+bool mdsp_position_stamp(MDEngine *e, int deck, double *pos, uint64_t *hostTime);
 double mdsp_flux_position(MDEngine *e, int deck);
 bool mdsp_loop(MDEngine *e, int deck, double *start, double *end);
 bool mdsp_playing(MDEngine *e, int deck);          // false nach Track-Ende

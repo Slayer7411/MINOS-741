@@ -351,6 +351,12 @@ public final class MixEngine: @unchecked Sendable {
     public func trackConsumed(_ d: Int, _ gen: UInt32) -> Bool { mdsp_track_consumed(core, Int32(d), gen) }
     public func seek(_ d: Int, seconds: Double) { mdsp_seek(core, Int32(d), max(0, seconds)) }
     public func position(_ d: Int) -> Double { mdsp_position(core, Int32(d)) }
+    /// Position und Zeit, zu der sie hörbar ist (mach_absolute_time-Basis, s); nil ohne Stempel. Stempel wie clockStamp.
+    public func positionStamp(_ d: Int) -> (pos: Double, at: Double)? {
+        var p = 0.0, h: UInt64 = 0
+        guard mdsp_position_stamp(core, Int32(d), &p, &h) else { return nil }
+        return (p, LinkSession.seconds(hostTicks: h + LinkSession.hostTicks(seconds: presentationLatency)))
+    }
     public func fluxPosition(_ d: Int) -> Double { mdsp_flux_position(core, Int32(d)) }
     /// Instant Double: Deck `d` übernimmt am nächsten Block die hörbare Position von `source` (sample-genau)
     public func follow(_ d: Int, deck source: Int) { mdsp_follow(core, Int32(d), Int32(source)) }

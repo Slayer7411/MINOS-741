@@ -265,6 +265,10 @@ public final class MixController: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var tickCount = 0
     private var bigError = [Int](repeating: 0, count: MixEngine.deckCount)
+    /// Phasen-Nachzug je Deck: geglättet mit Hysterese, damit der Blocktakt-Jitter des Fehlers die Rate nicht umschaltet
+    private var phaseNudge = [PhaseNudge](repeating: PhaseNudge(), count: MixEngine.deckCount)
+    /// Steuertakt (s), 200 Hz
+    private static let tickSeconds = 0.005
     /// Fix-Sync: von Hand eingestellter Phasenversatz je Deck (Beats)
     private var phaseOffset = [Double](repeating: 0, count: MixEngine.deckCount)
     // History: hörbare Spielzeit je Deck seit dem Laden
@@ -721,7 +725,7 @@ public final class MixController: @unchecked Sendable {
             state.decks[d] = n
             audio[d] = a
             playedTime[d] = 0; playedLogged[d] = true; playStart[d] = nil   // derselbe Track: kein zweiter History-Eintrag
-            phaseOffset[d] = phaseOffset[s]; bigError[d] = 0
+            phaseOffset[d] = phaseOffset[s]; bigError[d] = 0; phaseNudge[d].reset()
             loopArmed[d] = loopArmed[s]; loopUsed[d] = loopUsed[s]
             engine.player(d).flux = false
             engine.setTrim(d, start: n.trim.start ?? 0, end: n.trim.end ?? 0)
@@ -973,6 +977,7 @@ public final class MixController: @unchecked Sendable {
 
     /// jeder Sprung des Kerns läuft hier durch; MIX741_DEBUG=1: `[jump] deck A: von → nach (Grund)`
     private func jump(_ d: Int, to target: Double, _ reason: @autoclosure () -> String) {
+        phaseNudge[d].reset()   // Sprung: der geglättete Fehler gilt nicht mehr
         let from = Self.debug ? position(d) : 0
         let t = inRange(d, target)
         engine.seek(d, seconds: t)
@@ -1328,6 +1333,7 @@ public final class MixController: @unchecked Sendable {
             let was = state.decks[d].grab
             state.decks[d].grab = held
             engine.scratch(d, seconds: seconds, held: held)
+            phaseNudge[d].reset()
             if !held, was, state.prefs.syncMode == .fixed, state.decks[d].sync, let g = state.decks[d].grid, let mb = masterBeat() {
                 phaseOffset[d] = BeatGrid.phaseError(own: g.beatPosition(at: seconds), master: mb)
                 bigError[d] = 0
@@ -1364,6 +1370,7 @@ public final class MixController: @unchecked Sendable {
         if !state.clockIsMaster { guard let m = state.effectiveMaster, m != d else { return } }
         state.decks[d].tempoPct = (state.masterTempo / g.bpm - 1) * 100
         state.decks[d].nudge = 0
+        phaseNudge[d].reset()
         phaseOffset[d] = 0
         applyRate(d)
         if hard, let e = phaseErrorLocked(d) {
@@ -2641,12 +2648,13 @@ public final class MixController: @unchecked Sendable {
                 let hasMaster = state.clockIsMaster || (master != nil && master != d)
                 guard state.decks[d].sync, state.decks[d].playing, hasMaster,
                       let g = state.decks[d].grid, g.bpm > 0 else {
+                    phaseNudge[d].reset()
                     if state.decks[d].nudge != 0, !state.decks[d].sync { state.decks[d].nudge = 0; applyRate(d) }
                     continue
                 }
                 let target = (state.masterTempo / g.bpm - 1) * 100
-                var changed = abs(target - state.decks[d].tempoPct) > 0.0001
-                state.decks[d].tempoPct = target
+                var changed = false
+                if abs(target - state.decks[d].tempoPct) > 0.0001 { state.decks[d].tempoPct = target; changed = true }
                 // rückwärts (Flux-Reverse, Reverse) nicht nachziehen – beim Loslassen kommt die Flux-Position, die bleibt in Phase
                 if state.prefs.phaseLock, state.prefs.syncMode != .tempo, !state.decks[d].reverse, state.decks[d].bend == 0, !state.decks[d].grab,
                    let e = phaseErrorLocked(d) {
@@ -2657,9 +2665,8 @@ public final class MixController: @unchecked Sendable {
                         state.decks[d].nudge = 0
                         bigError[d] = 0
                     } else {
-                        let n = abs(e) < 0.004 ? 0 : max(-0.06, min(0.06, -e * 0.6))
-                        changed = changed || n != state.decks[d].nudge
-                        state.decks[d].nudge = n
+                        let n = phaseNudge[d].update(error: e, dt: Self.tickSeconds)
+                        if n != state.decks[d].nudge { state.decks[d].nudge = n; changed = true }
                     }
                 }
                 if changed { applyRate(d) }

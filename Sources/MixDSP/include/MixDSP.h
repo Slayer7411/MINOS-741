@@ -153,6 +153,9 @@ void mdsp_metronome(MDEngine *e, bool on, float volume, int firstChannel);
 
 /// Vorlauf des Keylock-Stretchers in Sekunden (wird beim Abspielen ausgeglichen: hörbare Position stimmt)
 double mdsp_keylock_latency(MDEngine *e);
+/// Ausgabelatenz ohne Puffer (Sekunden), vom Steuer-Thread gesetzt wenn sich das Gerät ändert; lesen ist lock-frei
+void mdsp_set_present_latency(MDEngine *e, double seconds);
+double mdsp_present_latency(MDEngine *e);
 
 /// Direkt rendern (Tests/Offline): out[ch][frame]
 void mdsp_render(MDEngine *e, float **out, int channels, int frames);

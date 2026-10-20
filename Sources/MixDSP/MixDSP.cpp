@@ -1126,6 +1126,7 @@ struct MDEngine {
     float masterSm = 0.85f;
     uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
     uint64_t subStampHost = 0; // Host-Zeit am Ende des laufenden Teilblocks (Stempel der Position, 0 = unbekannt)
+    std::atomic<double> presentLatency{0};   // Ausgabelatenz ohne Puffer (s), vom Steuer-Thread gesetzt
     std::atomic<uint64_t> renders{0};   // fertig gerechnete Blöcke (Plugin-Übergabe)
     uint64_t subBlock = 0;              // laufender Teilblock (nur Audio-Thread; Worker bekommen eine Kopie je Auftrag)
     double blockPos[MDSP_DECKS] = {};   // hörbare Positionen am Anfang des laufenden Blocks (nur Audio-Thread)
@@ -2165,6 +2166,8 @@ void mdsp_clock_trim(MDEngine *e, double delta) {
     while (!t.compare_exchange_weak(cur, cur + delta)) {}
 }
 double mdsp_keylock_latency(MDEngine *e) { return e->decks[0].stretch.outputLatency() / e->fs; }
+void mdsp_set_present_latency(MDEngine *e, double seconds) { e->presentLatency.store(seconds, std::memory_order_relaxed); }
+double mdsp_present_latency(MDEngine *e) { return e->presentLatency.load(std::memory_order_relaxed); }
 void mdsp_metronome(MDEngine *e, bool on, float volume, int ch) {
     e->clock.metroOn.store(on); e->clock.metroVol.store(volume); e->clock.metroCh.store(ch);
 }

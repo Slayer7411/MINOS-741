@@ -216,6 +216,7 @@ public final class MixEngine: @unchecked Sendable {
             if let seam = openSeamForTest { try seam(device) }
             else { try output.start(device: device, engine: core, engineRate: sampleRate, bufferFrames: bufferFrames, setDeviceRate: setRate) }
             let i = output.info
+            cachePresentationLatency()
             stateLock.withLock { _lastError = nil; _routing.device = i.device }
             update(.started(uid: i.uid, rate: i.deviceRate, buffer: i.bufferFrameSize))
         } catch {
@@ -284,6 +285,7 @@ public final class MixEngine: @unchecked Sendable {
         case .reread:
             let old = before.buffer
             output.refresh()
+            cachePresentationLatency()
             let i = output.info
             print(String(format: "[audio] Puffer %d -> %d Frames, Latenz %.1f ms", old, i.bufferFrameSize, i.outputLatency * 1000))
             onOutputEvent?(.bufferChanged(from: old, to: i.bufferFrameSize))
@@ -416,10 +418,12 @@ public final class MixEngine: @unchecked Sendable {
         guard mdsp_clock_stamp(core, &b, &h) else { return nil }
         return (b, h + LinkSession.hostTicks(seconds: presentationLatency))
     }
-    /// Ausgabelatenz ohne den Puffer: Geräte-, Sicherheits- und Stream-Latenz, Sekunden
-    public var presentationLatency: Double {
+    /// Ausgabelatenz ohne den Puffer: Geräte-, Sicherheits- und Stream-Latenz, Sekunden (lock-frei, s. cachePresentationLatency)
+    public var presentationLatency: Double { mdsp_present_latency(core) }
+    /// Aus dem Gerätezustand neu berechnen und im Kern ablegen; nur auf der Geräte-Queue nach Öffnen oder Neulesen
+    private func cachePresentationLatency() {
         let i = output.info
-        return max(0, i.outputLatency - (i.deviceRate > 0 ? Double(i.bufferFrameSize) / i.deviceRate : 0))
+        mdsp_set_present_latency(core, max(0, i.outputLatency - (i.deviceRate > 0 ? Double(i.bufferFrameSize) / i.deviceRate : 0)))
     }
     /// tatsächliche Puffergröße des Geräts (Frames)
     public var deviceBufferFrames: Int { Int(output.bufferFrameSize) }

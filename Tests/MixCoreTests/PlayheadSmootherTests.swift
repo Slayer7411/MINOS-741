@@ -68,3 +68,36 @@ private func run(_ s: inout PlayheadSmoother, from: Double, frames: Int, frame: 
     #expect(s.update(raw: 5.5, speed: 0, at: 0.01) == 5.5)   // Seek im Stand
     #expect(s.update(raw: 5.5, speed: 1, at: 0.02) == 5.5)   // erstes Bild nach Play: gemeldete Position
 }
+
+/// Kern meldet je Block (Ende E_k = k·block) die Position mit Hörzeit E_k + latency; Bilder sehen jeweils den letzten
+/// Block, der bei ihrer Zeit minus einem Zufallsversatz (Alter 0..block) schon fertig war
+@Test func smootherStampedConstantSpeedNoRipple() {
+    var s = PlayheadSmoother()
+    let frame = 1.0 / 120, block = 512.0 / 48000, latency = 0.02, v = 1.0, pos0 = 10.0
+    var seed: UInt64 = 42
+    var moves: [Double] = [], last = Double.nan
+    for i in 0..<480 {
+        let t = Double(i) * frame
+        seed = seed &* 6364136223846793005 &+ 1442695040888963407
+        let age = Double(seed >> 11) / Double(1 << 53) * block   // Blockalter 0..<block
+        let end = ((t - age) / block).rounded(.down) * block
+        let p = s.update(raw: pos0 + v * end, speed: v, at: t, heard: end + latency)
+        if i > 60, !last.isNaN { moves.append(p - last) }   // nach dem Anlauf
+        last = p
+    }
+    let lo = moves.min()!, hi = moves.max()!
+    #expect(abs(hi - lo) < frame * 1e-6)                  // Schritt je Bild konstant, Alter des Blocks ohne Wirkung
+    #expect(abs(moves.reduce(0, +) / Double(moves.count) - v * frame) < frame * 1e-6)
+}
+
+@Test func smootherStampedSeekAndStall() {
+    var s = PlayheadSmoother()
+    let frame = 1.0 / 120
+    var t = 0.0
+    for _ in 0..<120 { _ = s.update(raw: 10 + t, speed: 1, at: t, heard: t); t += frame }
+    // Sprung (Seek): sofort die neue Position mit ihrem Stempel
+    #expect(abs(s.update(raw: 20, speed: 1, at: t, heard: t) - 20) < 1e-12)
+    // Ausfall: keine Meldung mehr, Anzeige bleibt bei der gemeldeten Position
+    let held = s.update(raw: 20, speed: 1, at: t + 0.2, heard: t)
+    #expect(held == 20)
+}

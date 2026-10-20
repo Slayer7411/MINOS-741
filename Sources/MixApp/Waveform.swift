@@ -476,7 +476,8 @@ struct WaveformView: View {
         static func == (a: Self, b: Self) -> Bool { a.d == b.d && a.scene == b.scene && a.wave === b.wave && a.waiting == b.waiting }
 
         var body: some View {
-            WaveLayerView(scene: scene, wave: wave, position: { [mix, d] in mix.position(d) }, speed: { [mix, d] in mix.playSpeed(d) },
+            WaveLayerView(scene: scene, wave: wave, position: { [mix, d] in mix.position(d) }, stamp: { [mix, d] in mix.positionStamp(d) },
+                          speed: { [mix, d] in mix.playSpeed(d) },
                           loop: { [mix, d] in mix.engine.loop(d) }, autoLoop: { [mix, d] in mix.deck(d).autoLoop },
                           peer: { [mix, d] e in e == d ? nil : mix.peerDeck(e) })
                 .overlay {

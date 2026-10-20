@@ -411,6 +411,8 @@ final class MixModel {
 
     func deck(_ d: Int) -> DeckState { decks[d].state }
     func position(_ d: Int) -> Double { core.position(d) }
+    /// Position mit Hörzeit (s, Takt des Anzeige-Links) und der Geschwindigkeit, mit der der Kern gerade rechnet; nil ohne Stempel
+    func positionStamp(_ d: Int) -> (pos: Double, at: Double, speed: Double)? { core.positionStamp(d) }
     /// Abspielgeschwindigkeit für die Anzeige (s Track je s): 0 = steht, negativ = rückwärts, CUE gehalten läuft
     func playSpeed(_ d: Int) -> Double {
         let s = decks[d].state

@@ -133,6 +133,9 @@ void mdsp_scratch(MDEngine *e, int deck, double seconds, bool held);
 void mdsp_set_trim(MDEngine *e, int deck, double startSeconds, double endSeconds);
 
 double mdsp_position(MDEngine *e, int deck);      // Sekunden (hörbare Position)
+/// hörbare Position mit der Host-Zeit ihres Blockendes (mach-Ticks) und der Geschwindigkeit, mit der der Block
+/// tatsächlich gerechnet wurde (s je s, Vorzeichen = Richtung, 0 = steht); false = ohne Stempel (Sprung steht an, nie gerechnet)
+bool mdsp_position_stamp(MDEngine *e, int deck, double *pos, uint64_t *hostTime, double *speed);
 double mdsp_flux_position(MDEngine *e, int deck);
 bool mdsp_loop(MDEngine *e, int deck, double *start, double *end);
 bool mdsp_playing(MDEngine *e, int deck);          // false nach Track-Ende
@@ -151,6 +154,9 @@ void mdsp_metronome(MDEngine *e, bool on, float volume, int firstChannel);
 
 /// Vorlauf des Keylock-Stretchers in Sekunden (wird beim Abspielen ausgeglichen: hörbare Position stimmt)
 double mdsp_keylock_latency(MDEngine *e);
+/// Ausgabelatenz ohne Puffer (Sekunden), vom Steuer-Thread gesetzt wenn sich das Gerät ändert; lesen ist lock-frei
+void mdsp_set_present_latency(MDEngine *e, double seconds);
+double mdsp_present_latency(MDEngine *e);
 
 /// Direkt rendern (Tests/Offline): out[ch][frame]
 void mdsp_render(MDEngine *e, float **out, int channels, int frames);

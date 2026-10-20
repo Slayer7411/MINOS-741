@@ -1003,6 +1003,11 @@ struct Deck {
 
     // vom Audio-Thread gelesen/geschrieben, nach außen atomar gespiegelt
     std::atomic<double> posOut{0}, fluxOut{0};
+    // Host-Zeit (mach-Ticks) am Ende des Blocks zu posOut (0 = unbekannt) und die Geschwindigkeit, mit der er
+    // gerechnet wurde (s je s, mit Vorzeichen); Seqlock wie der Takt-Stempel
+    std::atomic<uint32_t> posSeq{0};
+    std::atomic<uint64_t> posHost{0};
+    std::atomic<double> speedOut{0};
     std::atomic<bool> playingOut{false}, loopActiveOut{false};
     std::atomic<double> loopStartOut{0}, loopEndOut{0};
     std::atomic<float> rms{0}, peak{0};
@@ -1122,6 +1127,8 @@ struct MDEngine {
     std::atomic<float> master{0.85f};
     float masterSm = 0.85f;
     uint64_t renderHost = 0;   // setzt der CoreAudio-Callback vor jedem Block
+    uint64_t subStampHost = 0; // Host-Zeit am Ende des laufenden Teilblocks (Stempel der Position, 0 = unbekannt)
+    std::atomic<double> presentLatency{0};   // Ausgabelatenz ohne Puffer (s), vom Steuer-Thread gesetzt
     std::atomic<uint64_t> renders{0};   // fertig gerechnete Blöcke (Plugin-Übergabe)
     uint64_t subBlock = 0;              // laufender Teilblock (nur Audio-Thread; Worker bekommen eine Kopie je Auftrag)
     double blockPos[MDSP_DECKS] = {};   // hörbare Positionen am Anfang des laufenden Blocks (nur Audio-Thread)
@@ -1353,6 +1360,16 @@ static void runFX(MDEngine *e, FXChain &c, int u, float *L, float *R, int n, uin
 }
 
 /// ein Deck für einen Teilblock rechnen (Abspielen, Kanalzug, FX, Fader) -> d.outL/outR; die Summe macht mixDeck
+// posOut und Stempel zusammen veröffentlichen (Seqlock: Steuer-Thread liest ohne Sperre, nie bei Schreibvorgang)
+// speed = tatsächlich gerechnete Geschwindigkeit dieses Blocks (s je s, mit Vorzeichen), für die Anzeige-Extrapolation
+static inline void publishPos(Deck &d, double pos, uint64_t host, double speed) {
+    d.posSeq.fetch_add(1, std::memory_order_acq_rel);
+    d.posOut.store(pos, std::memory_order_relaxed);
+    d.posHost.store(host, std::memory_order_relaxed);
+    d.speedOut.store(speed, std::memory_order_relaxed);
+    d.posSeq.fetch_add(1, std::memory_order_release);
+}
+
 static void renderDeckBlock(MDEngine *e, Deck &d, int n, uint64_t sub) {
     d.blockHas = false; d.blockOk = true;
     // ausstehende Änderungen übernehmen
@@ -1414,7 +1431,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n, uint64_t sub) {
         d.rms.store(d.rms.load() * 0.8f); d.peak.store(d.peak.load() * 0.8f);
         d.playingOut.store(false);
         if (d.cur.frames > 0) d.pos = std::clamp(d.pos, d.lo, d.hi);   // am Ende ein Stück darüber hinaus gelaufen
-        d.posOut.store(d.pos / d.cur.rate); d.fluxOut.store(d.flux / d.cur.rate);
+        publishPos(d, d.pos / d.cur.rate, e->subStampHost, 0); d.fluxOut.store(d.flux / d.cur.rate);
         return;
     }
 
@@ -1426,6 +1443,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n, uint64_t sub) {
     bool stretching = playing && !scratch && (d.p[MD_KEYLOCK].load() > 0.5f || keyShift != 0);
     bool fluxOn = d.p[MD_FLUX].load() > 0.5f;
     double latencySrc = 0;
+    double applied = 0;   // Geschwindigkeit, mit der dieser Block die Position weiterschiebt (s je s, 0 = steht)
 
     if (!playing) {
         std::memset(L, 0, sizeof(float) * n); std::memset(R, 0, sizeof(float) * n);
@@ -1452,6 +1470,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n, uint64_t sub) {
         float *ins[2] = {d.inL.data(), d.inR.data()}, *outs[2] = {L, R};
         d.stretch.process(ins, nIn, outs, n);
         latencySrc = d.stretch.inputLatency() + d.stretch.outputLatency() * rate * srcRatio;
+        applied = rate * dir;
     } else if (scratch) {
         // Ziel der Hand (Quell-Frames, im hörbaren Bereich): je Block der Anteil des Abstands, der in kScratchTauS verschwindet
         double tgt = std::clamp(d.scratchTarget.load() * d.cur.rate, d.lo, d.hi);
@@ -1460,9 +1479,11 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n, uint64_t sub) {
         bool loopWas = d.loopWrap; d.loopWrap = false;   // ein Loop wirkt nicht gegen die Hand
         readResampled(d, L, R, n, step);
         d.loopWrap = loopWas;
+        applied = step / srcRatio;   // Quell-Frames je Ausgangsframe -> s je s
         if (sm == 2 && std::fabs(tgt - d.pos) < 1.0) { int two = 2; d.scratchMode.compare_exchange_strong(two, 0); }   // angekommen
     } else {
         readResampled(d, L, R, n, rate * srcRatio * dir);
+        applied = rate * dir;
     }
     d.wasStretching = stretching;
 
@@ -1510,7 +1531,7 @@ static void renderDeckBlock(MDEngine *e, Deck &d, int n, uint64_t sub) {
     // Zustand nach außen: hörbare Position (Keylock-Latenz abgezogen)
     if (stretching) d.latSm += (latencySrc - d.latSm) * 0.02;   // Latenz hängt leicht vom Tempo ab → glätten
     double heard = std::clamp(d.pos - d.latSm * d.latDir, d.lo, std::max(d.lo, d.hi));
-    d.posOut.store(heard / d.cur.rate);
+    publishPos(d, heard / d.cur.rate, e->subStampHost, applied);
     d.fluxOut.store(std::max(0.0, d.flux - d.latSm * d.latDir) / d.cur.rate);
     d.playingOut.store(d.p[MD_PLAYING].load() > 0.5f);
     d.loopActiveOut.store(d.loopActive);
@@ -1944,6 +1965,20 @@ double mdsp_position(MDEngine *e, int deck) {
     return std::isnan(s) ? d.posOut.load() : s;
 }
 double mdsp_flux_position(MDEngine *e, int deck) { return e->decks[deck].fluxOut.load(); }
+bool mdsp_position_stamp(MDEngine *e, int deck, double *pos, uint64_t *hostTime, double *speed) {
+    Deck &d = e->decks[deck];
+    double s = d.pendingSeek.load();
+    if (!std::isnan(s)) { *pos = s; *hostTime = 0; *speed = 0; return false; }   // Sprung steht an: ohne Stempel
+    for (int i = 0; i < 8; i++) {
+        uint32_t q = d.posSeq.load(std::memory_order_acquire);
+        if (q & 1) continue;
+        double p = d.posOut.load(std::memory_order_relaxed);
+        uint64_t h = d.posHost.load(std::memory_order_relaxed);
+        double v = d.speedOut.load(std::memory_order_relaxed);
+        if (d.posSeq.load(std::memory_order_acquire) == q) { *pos = p; *hostTime = h; *speed = v; return h != 0; }
+    }
+    *pos = d.posOut.load(); *hostTime = 0; *speed = 0; return false;
+}
 bool mdsp_loop(MDEngine *e, int deck, double *s, double *en) {
     Deck &d = e->decks[deck];
     *s = d.loopStartOut.load(); *en = d.loopEndOut.load();
@@ -1960,6 +1995,12 @@ static inline uint64_t nowNs() {
 #else
     return uint64_t(std::chrono::steady_clock::now().time_since_epoch().count());
 #endif
+}
+
+/// Host-Zeit `seconds` nach `host` (mach-Ticks)
+static inline uint64_t hostAfter(uint64_t host, double seconds) {
+    static const double perSec = [] { mach_timebase_info_data_t tb; mach_timebase_info(&tb); return 1e9 * double(tb.denom) / double(tb.numer); }();
+    return host + uint64_t(seconds * perSec);
 }
 
 void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
@@ -1989,6 +2030,7 @@ void mdsp_render(MDEngine *e, float **out, int channels, int frames) {
         for (int c = 0; c < channels && c < 64; c++) o[c] = out[c] + done;
         e->fxBeat = beatStart + done * perSample; e->fxBps = perSample;
         e->subBlock++;
+        e->subStampHost = e->renderHost ? hostAfter(e->renderHost, double(done + n) / e->fs) : 0;   // Ende des Teilblocks
         for (int i = 0; i < MDSP_DECKS; i++) e->blockPos[i] = e->decks[i].posOut.load(std::memory_order_relaxed);
         // Decks, deren Worker nach einem Fristablauf noch rechnet, bleiben still (nicht gleichzeitig zweimal rechnen)
         bool skip[MDSP_DECKS] = {};
@@ -2133,6 +2175,8 @@ void mdsp_clock_trim(MDEngine *e, double delta) {
     while (!t.compare_exchange_weak(cur, cur + delta)) {}
 }
 double mdsp_keylock_latency(MDEngine *e) { return e->decks[0].stretch.outputLatency() / e->fs; }
+void mdsp_set_present_latency(MDEngine *e, double seconds) { e->presentLatency.store(seconds, std::memory_order_relaxed); }
+double mdsp_present_latency(MDEngine *e) { return e->presentLatency.load(std::memory_order_relaxed); }
 void mdsp_metronome(MDEngine *e, bool on, float volume, int ch) {
     e->clock.metroOn.store(on); e->clock.metroVol.store(volume); e->clock.metroCh.store(ch);
 }

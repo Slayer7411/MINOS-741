@@ -216,6 +216,7 @@ public final class MixEngine: @unchecked Sendable {
             if let seam = openSeamForTest { try seam(device) }
             else { try output.start(device: device, engine: core, engineRate: sampleRate, bufferFrames: bufferFrames, setDeviceRate: setRate) }
             let i = output.info
+            cachePresentationLatency()
             stateLock.withLock { _lastError = nil; _routing.device = i.device }
             update(.started(uid: i.uid, rate: i.deviceRate, buffer: i.bufferFrameSize))
         } catch {
@@ -284,6 +285,7 @@ public final class MixEngine: @unchecked Sendable {
         case .reread:
             let old = before.buffer
             output.refresh()
+            cachePresentationLatency()
             let i = output.info
             print(String(format: "[audio] Puffer %d -> %d Frames, Latenz %.1f ms", old, i.bufferFrameSize, i.outputLatency * 1000))
             onOutputEvent?(.bufferChanged(from: old, to: i.bufferFrameSize))
@@ -351,6 +353,13 @@ public final class MixEngine: @unchecked Sendable {
     public func trackConsumed(_ d: Int, _ gen: UInt32) -> Bool { mdsp_track_consumed(core, Int32(d), gen) }
     public func seek(_ d: Int, seconds: Double) { mdsp_seek(core, Int32(d), max(0, seconds)) }
     public func position(_ d: Int) -> Double { mdsp_position(core, Int32(d)) }
+    /// Position, Zeit, zu der sie hörbar ist (mach_absolute_time-Basis, s) und die Geschwindigkeit, mit der der Kern
+    /// rechnet (s je s, mit Vorzeichen; Nudge und Bend inklusive); nil ohne Stempel. Stempel wie clockStamp.
+    public func positionStamp(_ d: Int) -> (pos: Double, at: Double, speed: Double)? {
+        var p = 0.0, h: UInt64 = 0, v = 0.0
+        guard mdsp_position_stamp(core, Int32(d), &p, &h, &v) else { return nil }
+        return (p, LinkSession.seconds(hostTicks: h + LinkSession.hostTicks(seconds: presentationLatency)), v)
+    }
     public func fluxPosition(_ d: Int) -> Double { mdsp_flux_position(core, Int32(d)) }
     /// Instant Double: Deck `d` übernimmt am nächsten Block die hörbare Position von `source` (sample-genau)
     public func follow(_ d: Int, deck source: Int) { mdsp_follow(core, Int32(d), Int32(source)) }
@@ -410,10 +419,12 @@ public final class MixEngine: @unchecked Sendable {
         guard mdsp_clock_stamp(core, &b, &h) else { return nil }
         return (b, h + LinkSession.hostTicks(seconds: presentationLatency))
     }
-    /// Ausgabelatenz ohne den Puffer: Geräte-, Sicherheits- und Stream-Latenz, Sekunden
-    public var presentationLatency: Double {
+    /// Ausgabelatenz ohne den Puffer: Geräte-, Sicherheits- und Stream-Latenz, Sekunden (lock-frei, s. cachePresentationLatency)
+    public var presentationLatency: Double { mdsp_present_latency(core) }
+    /// Aus dem Gerätezustand neu berechnen und im Kern ablegen; nur auf der Geräte-Queue nach Öffnen oder Neulesen
+    private func cachePresentationLatency() {
         let i = output.info
-        return max(0, i.outputLatency - (i.deviceRate > 0 ? Double(i.bufferFrameSize) / i.deviceRate : 0))
+        mdsp_set_present_latency(core, max(0, i.outputLatency - (i.deviceRate > 0 ? Double(i.bufferFrameSize) / i.deviceRate : 0)))
     }
     /// tatsächliche Puffergröße des Geräts (Frames)
     public var deviceBufferFrames: Int { Int(output.bufferFrameSize) }

@@ -310,7 +310,7 @@ public final class MixController: @unchecked Sendable {
     public func snapshotRevision() -> UInt64 { locked { revision } }
     public func trackAudio(_ d: Int) -> TrackAudio? { locked { audio[d] } }
     public func position(_ d: Int) -> Double { engine.position(d) }
-    public func positionStamp(_ d: Int) -> (pos: Double, at: Double)? { engine.positionStamp(d) }
+    public func positionStamp(_ d: Int) -> (pos: Double, at: Double, speed: Double)? { engine.positionStamp(d) }
     /// hörbare Spielzeit seit dem Laden (für die History-Dauer)
     public func playedSeconds(_ d: Int) -> Double { locked { playedTime[d] } }
 

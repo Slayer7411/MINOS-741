@@ -88,7 +88,7 @@ struct WaveLayerView: NSViewRepresentable {
     let scene: WaveScene
     let wave: RenderedWaveform?
     let position: @MainActor () -> Double
-    let stamp: @MainActor () -> (pos: Double, at: Double)?
+    let stamp: @MainActor () -> (pos: Double, at: Double, speed: Double)?
     /// Abspielgeschwindigkeit (s je s, 0 = steht) – Spielkopf zwischen den Meldungen des Kerns
     let speed: @MainActor () -> Double
     let loop: @MainActor () -> (active: Bool, start: Double, end: Double)
@@ -123,7 +123,7 @@ final class WaveLayerNSView: NSView {
     var position: @MainActor () -> Double = { 0 }
     var speed: @MainActor () -> Double = { 0 }
     /// Position mit Hörzeit (Stempel); nil = ohne, dann gilt `position`
-    var stamp: @MainActor () -> (pos: Double, at: Double)? = { nil }
+    var stamp: @MainActor () -> (pos: Double, at: Double, speed: Double)? = { nil }
     var loop: @MainActor () -> (active: Bool, start: Double, end: Double) = { (false, 0, 0) }
     var autoLoop: @MainActor () -> Bool = { false }
     var peer: @MainActor (Int) -> WaveformPeer? = { _ in nil }
@@ -837,7 +837,7 @@ final class WaveLayerNSView: NSView {
         let raw = st?.pos ?? position()
         let pos: Double
         if Self.unsmoothed { pos = raw }
-        else if let t, let st { pos = smoother.update(raw: st.pos, speed: speed(), at: t, heard: st.at) }
+        else if let t, let st { pos = smoother.update(raw: st.pos, speed: st.speed, at: t, heard: st.at) }   // Kerntempo des Blocks, nicht die Anzeige
         else if let t { pos = smoother.update(raw: raw, speed: speed(), at: t) }
         else { pos = smoother.shown.isNaN || CACurrentMediaTime() - lastTick > 0.05 ? raw : smoother.shown }
         let l = loop(), auto = !l.active && l.end > l.start && autoLoop()
